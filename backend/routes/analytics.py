@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
-from backend.auth.jwt_handler import get_current_user
-from backend.controllers.analytics_controller import get_analytics_dashboard_controller
-from backend.models.analytics import (
+from auth.jwt_handler import get_current_user
+from controllers.analytics_controller import get_analytics_dashboard_controller
+from models.analytics import (
     HealthScoreBreakdown,
     RiskPredictionCard,
     WeeklyReportResponse,

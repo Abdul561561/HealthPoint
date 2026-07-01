@@ -7,9 +7,9 @@ from bson import ObjectId
 import cloudinary
 import cloudinary.uploader
 from dotenv import load_dotenv
-from backend.database.mongodb import get_database
-from backend.models.pharmacy import OrderCreate
-from backend.controllers.gemini_helper import call_gemini
+from database.mongodb import get_database
+from models.pharmacy import OrderCreate
+from controllers.gemini_helper import call_gemini
 
 # Load .env
 _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env")

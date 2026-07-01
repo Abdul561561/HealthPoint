@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form
 from typing import List, Optional
-from backend.models.record import RecordCreate, RecordResponse
-from backend.auth.jwt_handler import get_current_user
-from backend.controllers.record_controller import (
+from models.record import RecordCreate, RecordResponse
+from auth.jwt_handler import get_current_user
+from controllers.record_controller import (
     get_records_controller,
     create_record_controller,
     delete_record_controller,

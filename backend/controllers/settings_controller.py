@@ -1,7 +1,7 @@
 import datetime
 from fastapi import HTTPException, status
-from backend.database.mongodb import get_database
-from backend.auth.jwt_handler import hash_password, verify_password
+from database.mongodb import get_database
+from auth.jwt_handler import hash_password, verify_password
 from pydantic import BaseModel
 from typing import Optional
 

@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends
 from typing import List
-from backend.models.appointment import AppointmentCreate, AppointmentResponse
-from backend.auth.jwt_handler import get_current_user
-from backend.controllers.appointment_controller import (
+from models.appointment import AppointmentCreate, AppointmentResponse
+from auth.jwt_handler import get_current_user
+from controllers.appointment_controller import (
     get_appointments_controller,
     create_appointment_controller,
     cancel_appointment_controller

@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends
 from typing import List
-from backend.auth.jwt_handler import get_current_user
-from backend.models.consultation import ClinicalNoteCreate, ClinicalNoteResponse
-from backend.controllers.consultation_controller import (
+from auth.jwt_handler import get_current_user
+from models.consultation import ClinicalNoteCreate, ClinicalNoteResponse
+from controllers.consultation_controller import (
     get_video_appointments,
     get_jitsi_room_config,
     save_clinical_note_controller,
@@ -29,7 +29,7 @@ async def fetch_patient_notes(patient_email: str, current_user: dict = Depends(g
 
 @router.get("/biometrics/{patient_email}")
 async def fetch_patient_biometrics(patient_email: str, current_user: dict = Depends(get_current_user)):
-    from backend.database.mongodb import get_database
+    from database.mongodb import get_database
     from fastapi import HTTPException
     db = get_database()
     if db is None:

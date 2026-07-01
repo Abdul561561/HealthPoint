@@ -1,8 +1,8 @@
 from fastapi import HTTPException, status
 from bson import ObjectId
 import datetime
-from backend.database.mongodb import get_database
-from backend.models.appointment import AppointmentCreate
+from database.mongodb import get_database
+from models.appointment import AppointmentCreate
 
 async def get_appointments_controller(user_email: str):
     db = get_database()

@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends
 from typing import List
-from backend.models.emergency import SOSCreate, SOSResponse
-from backend.auth.jwt_handler import get_current_user
-from backend.controllers.emergency_controller import (
+from models.emergency import SOSCreate, SOSResponse
+from auth.jwt_handler import get_current_user
+from controllers.emergency_controller import (
     trigger_sos_controller,
     get_emergency_history_controller
 )

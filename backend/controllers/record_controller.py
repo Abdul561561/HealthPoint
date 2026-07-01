@@ -5,7 +5,7 @@ import os
 import datetime
 import cloudinary
 import cloudinary.uploader
-from backend.database.mongodb import get_database
+from database.mongodb import get_database
 
 CLOUDINARY_URL = os.getenv("CLOUDINARY_URL", "")
 if CLOUDINARY_URL:

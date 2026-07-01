@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
-from backend.auth.jwt_handler import get_current_user
-from backend.controllers.settings_controller import (
+from auth.jwt_handler import get_current_user
+from controllers.settings_controller import (
     get_settings_controller,
     update_settings_controller,
     change_password_controller,

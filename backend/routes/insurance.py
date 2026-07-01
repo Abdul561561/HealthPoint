@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, Query
 from typing import List, Optional
-from backend.auth.jwt_handler import get_current_user
-from backend.models.insurance import (
+from auth.jwt_handler import get_current_user
+from models.insurance import (
     ClaimCreate, ClaimResponse, ChatRequest, PlanResponse, FavoriteHospitalRequest
 )
-from backend.controllers.insurance_controller import (
+from controllers.insurance_controller import (
     get_claims_controller,
     create_claim_controller,
     analyze_claim_controller,

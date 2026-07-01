@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends
 from typing import List
-from backend.models.fitness import WorkoutCreate, WorkoutResponse, WaterUpdate, MetricUpdate, MealCreate, MealResponse
-from backend.auth.jwt_handler import get_current_user
-from backend.controllers.fitness_controller import (
+from models.fitness import WorkoutCreate, WorkoutResponse, WaterUpdate, MetricUpdate, MealCreate, MealResponse
+from auth.jwt_handler import get_current_user
+from controllers.fitness_controller import (
     get_workouts_controller,
     create_workout_controller,
     get_metrics_controller,

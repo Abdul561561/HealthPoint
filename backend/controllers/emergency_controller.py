@@ -1,8 +1,8 @@
 from fastapi import HTTPException, status
 from bson import ObjectId
 import datetime
-from backend.database.mongodb import get_database
-from backend.models.emergency import SOSCreate
+from database.mongodb import get_database
+from models.emergency import SOSCreate
 
 async def trigger_sos_controller(user_email: str, sos_data: SOSCreate):
     db = get_database()

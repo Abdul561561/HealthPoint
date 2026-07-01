@@ -5,7 +5,7 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import bcrypt
-from backend.database.mongodb import get_database
+from database.mongodb import get_database
 
 # JWT configuration variables
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "healthpoint_super_secret_key_12345!@#")

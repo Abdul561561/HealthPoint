@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
-from backend.models.user import UserRegister, UserLogin, UserProfileUpdate, TokenResponse, UserSocialLogin, RegisterResponse, VerifyRequest
-from backend.auth.jwt_handler import get_current_user
-from backend.controllers.auth_controller import (
+from models.user import UserRegister, UserLogin, UserProfileUpdate, TokenResponse, UserSocialLogin, RegisterResponse, VerifyRequest
+from auth.jwt_handler import get_current_user
+from controllers.auth_controller import (
     register_user_controller,
     login_user_controller,
     get_user_profile_controller,

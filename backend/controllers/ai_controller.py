@@ -1,8 +1,8 @@
 import os
 from fastapi import HTTPException, status
 from bson import ObjectId
-from backend.database.mongodb import get_database
-from backend.controllers.gemini_helper import call_gemini, call_gemini_chat
+from database.mongodb import get_database
+from controllers.gemini_helper import call_gemini, call_gemini_chat
 
 SYSTEM_DISCLAIMER = "\n\n> *Disclaimer: HealthPoint AI provides personalized health insights for educational purposes and does not replace professional medical advice, diagnosis, or treatment. Always consult a qualified doctor or healthcare professional for clinical decisions.*"
 
@@ -85,7 +85,7 @@ async def chat_ai_controller(user_email: str, message: str, session_id: str = No
     # Compute Scikit-Learn risk predictions for AI context
     risk_summary = ""
     try:
-        from backend.controllers.analytics_controller import HealthClassifierManager
+        from controllers.analytics_controller import HealthClassifierManager
         import numpy as np
         ml_manager = HealthClassifierManager.get_instance()
         age = user.get("age", 28) if user else 28

@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Optional
-from backend.auth.jwt_handler import get_current_user
-from backend.controllers.ai_controller import (
+from auth.jwt_handler import get_current_user
+from controllers.ai_controller import (
     chat_ai_controller,
     get_chat_history_controller,
     analyze_report_controller,

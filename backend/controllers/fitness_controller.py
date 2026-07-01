@@ -1,7 +1,7 @@
 from fastapi import HTTPException, status
 from bson import ObjectId
-from backend.database.mongodb import get_database
-from backend.models.fitness import WorkoutCreate, WaterUpdate, MetricUpdate
+from database.mongodb import get_database
+from models.fitness import WorkoutCreate, WaterUpdate, MetricUpdate
 
 async def get_workouts_controller(user_email: str):
     db = get_database()
@@ -90,7 +90,7 @@ async def update_metric_controller(user_email: str, metric_data: MetricUpdate):
     
     return {"success": True, "message": f"Metric {metric_data.key} updated"}
 
-from backend.models.fitness import WorkoutCreate, WaterUpdate, MetricUpdate, MealCreate
+from models.fitness import WorkoutCreate, WaterUpdate, MetricUpdate, MealCreate
 
 async def update_water_controller(user_email: str, water_data: WaterUpdate):
     db = get_database()

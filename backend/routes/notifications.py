@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
-from backend.auth.jwt_handler import get_current_user
-from backend.database.mongodb import get_database
+from auth.jwt_handler import get_current_user
+from database.mongodb import get_database
 from bson import ObjectId
 import datetime
 

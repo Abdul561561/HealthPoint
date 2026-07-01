@@ -1,8 +1,8 @@
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 from fastapi import HTTPException, status
-from backend.database.mongodb import get_database
-from backend.models.analytics import (
+from database.mongodb import get_database
+from models.analytics import (
     HealthScoreBreakdown,
     RiskPredictionCard,
     WeeklyReportResponse,

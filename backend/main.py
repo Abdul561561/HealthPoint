@@ -3,23 +3,23 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from backend.database.mongodb import connect_to_mongo, close_mongo_connection
-from backend.routes.auth import router as auth_router
-from backend.routes.doctors import router as doctors_router
-from backend.routes.appointments import router as appointments_router
-from backend.routes.records import router as records_router
-from backend.routes.fitness import router as fitness_router
-from backend.routes.ai import router as ai_router
-from backend.routes.pharmacy import router as pharmacy_router
-from backend.routes.consultations import router as consultations_router
-from backend.routes.analytics import router as analytics_router
-from backend.routes.admin import router as admin_router
-from backend.routes.insurance import router as insurance_router
-from backend.routes.emergency import router as emergency_router
-from backend.routes.maps import router as maps_router
-from backend.routes.notifications import router as notifications_router
-from backend.routes.settings import router as settings_router
-from backend.controllers.analytics_controller import HealthClassifierManager
+from database.mongodb import connect_to_mongo, close_mongo_connection
+from routes.auth import router as auth_router
+from routes.doctors import router as doctors_router
+from routes.appointments import router as appointments_router
+from routes.records import router as records_router
+from routes.fitness import router as fitness_router
+from routes.ai import router as ai_router
+from routes.pharmacy import router as pharmacy_router
+from routes.consultations import router as consultations_router
+from routes.analytics import router as analytics_router
+from routes.admin import router as admin_router
+from routes.insurance import router as insurance_router
+from routes.emergency import router as emergency_router
+from routes.maps import router as maps_router
+from routes.notifications import router as notifications_router
+from routes.settings import router as settings_router
+from controllers.analytics_controller import HealthClassifierManager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -75,4 +75,4 @@ def read_root():
     }
 
 if __name__ == "__main__":
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Query
 from typing import Optional
-from backend.auth.jwt_handler import get_current_user
-from backend.models.pharmacy import OrderCreate
-from backend.controllers.pharmacy_controller import (
+from auth.jwt_handler import get_current_user
+from models.pharmacy import OrderCreate
+from controllers.pharmacy_controller import (
     upload_prescription_cloudinary,
     create_pharmacy_order,
     fetch_order_history,

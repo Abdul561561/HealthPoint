@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query
 from typing import Optional
-from backend.controllers.maps_controller import (
+from controllers.maps_controller import (
     get_nearby_doctors,
     get_nearby_pharmacies,
     get_place_details

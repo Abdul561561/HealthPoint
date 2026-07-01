@@ -3,9 +3,9 @@ import json
 import datetime
 from fastapi import HTTPException, status
 from bson import ObjectId
-from backend.database.mongodb import get_database
-from backend.models.insurance import ClaimCreate, FavoriteHospitalRequest
-from backend.controllers.gemini_helper import call_gemini, call_gemini_chat
+from database.mongodb import get_database
+from models.insurance import ClaimCreate, FavoriteHospitalRequest
+from controllers.gemini_helper import call_gemini, call_gemini_chat
 
 SYSTEM_DISCLAIMER = "\n\n> *Disclaimer: I am your AI Insurance Assistant. This guidance is for educational and informational purposes to help you navigate your healthcare policy. Always refer to your official policy handbook and consult with our billing desk or your insurance representative for official authorization.*"
 

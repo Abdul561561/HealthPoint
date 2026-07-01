@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import List, Optional, Any
 from bson import ObjectId
-from backend.database.mongodb import get_database
-from backend.auth.jwt_handler import get_current_user
+from database.mongodb import get_database
+from auth.jwt_handler import get_current_user
 
 router = APIRouter(prefix="/admin", tags=["Admin Dashboard"])
 

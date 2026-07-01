@@ -1,7 +1,7 @@
 from fastapi import HTTPException, status
 import httpx
 import random
-from backend.database.mongodb import get_database
+from database.mongodb import get_database
 
 async def get_doctors_controller(lat: float = None, lng: float = None):
     db = get_database()

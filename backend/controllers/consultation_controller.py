@@ -1,8 +1,8 @@
 import datetime
 from fastapi import HTTPException, status
 from bson import ObjectId
-from backend.database.mongodb import get_database
-from backend.models.consultation import ClinicalNoteCreate
+from database.mongodb import get_database
+from models.consultation import ClinicalNoteCreate
 
 async def get_video_appointments(user_email: str):
     db = get_database()

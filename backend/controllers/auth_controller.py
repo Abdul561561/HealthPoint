@@ -2,9 +2,9 @@ import re
 import datetime
 from fastapi import HTTPException, status
 from bson import ObjectId
-from backend.database.mongodb import get_database
-from backend.auth.jwt_handler import hash_password, verify_password, create_access_token
-from backend.models.user import UserRegister, UserLogin, UserProfileUpdate, UserSocialLogin, VerifyRequest
+from database.mongodb import get_database
+from auth.jwt_handler import hash_password, verify_password, create_access_token
+from models.user import UserRegister, UserLogin, UserProfileUpdate, UserSocialLogin, VerifyRequest
 import random
 
 def parse_height_to_cm(height_str: str) -> float:
