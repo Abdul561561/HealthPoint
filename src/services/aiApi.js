@@ -2,10 +2,12 @@ import api from './api';
 import axios from 'axios';
 
 // Create a separate Axios instance for AI calls with longer timeout
-const aiApi = axios.create({
-  baseURL: window.location.hostname === 'localhost' ? 'https://healthpoint-backend.onrender.com/api' : '/api',
-  timeout: 60000, // 60s for Gemini AI calls (they can take 20-30s)
-  headers: { 'Content-Type': 'application/json' },
+const api = axios.create({
+    baseURL: 'https://healthpoint-backend.onrender.com/api',
+    timeout: 10000,
+    headers: {
+        'Content-Type': 'application/json'
+    }
 });
 
 aiApi.interceptors.request.use(

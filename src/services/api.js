@@ -1,11 +1,12 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: window.location.hostname === 'localhost' ? 'https://healthpoint-backend.onrender.com/api' : '/api',
-  timeout: 10000,
-  headers: { 'Content-Type': 'application/json' },
+    baseURL: 'https://healthpoint-backend.onrender.com/api',
+    timeout: 10000,
+    headers: {
+        'Content-Type': 'application/json'
+    }
 });
-
 // Request interceptor — attach auth token
 api.interceptors.request.use(
   (config) => {
