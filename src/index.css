@@ -1,0 +1,247 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply font-sans antialiased;
+    @apply bg-slate-50 text-slate-900;
+    @apply dark:bg-dark-300 dark:text-slate-100;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-slate-300 dark:bg-slate-700 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-400 dark:bg-slate-600;
+  }
+}
+
+@layer components {
+  /* Glass Card */
+  .glass-card {
+    @apply backdrop-blur-xl border rounded-2xl;
+    @apply bg-white/80 border-white/60 shadow-card;
+    @apply dark:bg-white/5 dark:border-white/10 dark:shadow-glass;
+    transition: all 0.3s ease;
+  }
+
+  .glass-card:hover {
+    @apply dark:border-white/20;
+    transform: translateY(-2px);
+  }
+
+  /* Primary Button */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2;
+    @apply px-6 py-3 rounded-xl font-semibold text-sm;
+    @apply bg-primary-600 hover:bg-primary-700 text-white;
+    @apply transition-all duration-200 ease-out;
+    @apply shadow-lg hover:shadow-glow-primary;
+    @apply active:scale-95;
+  }
+
+  /* Secondary Button */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2;
+    @apply px-6 py-3 rounded-xl font-semibold text-sm;
+    @apply bg-white/10 hover:bg-white/20 text-white border border-white/20;
+    @apply transition-all duration-200 ease-out;
+    @apply active:scale-95;
+  }
+
+  /* Outline Button */
+  .btn-outline {
+    @apply inline-flex items-center justify-center gap-2;
+    @apply px-6 py-3 rounded-xl font-semibold text-sm;
+    @apply border-2 border-primary-600 text-primary-600 hover:bg-primary-600 hover:text-white;
+    @apply dark:border-primary-400 dark:text-primary-400 dark:hover:bg-primary-600 dark:hover:text-white;
+    @apply transition-all duration-200 ease-out;
+    @apply active:scale-95;
+  }
+
+  /* Metric Card */
+  .metric-card {
+    @apply glass-card p-5 cursor-default;
+  }
+
+  /* Nav Link */
+  .nav-link {
+    @apply flex items-center gap-3 px-4 py-3 rounded-xl;
+    @apply text-slate-600 dark:text-slate-400 font-medium text-sm;
+    @apply hover:bg-primary-50 hover:text-primary-600;
+    @apply dark:hover:bg-primary-900/30 dark:hover:text-primary-400;
+    @apply transition-all duration-200;
+  }
+
+  .nav-link.active {
+    @apply bg-primary-600 text-white;
+    @apply dark:bg-primary-600 dark:text-white;
+    @apply shadow-glow-primary;
+  }
+
+  /* Badge */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold;
+  }
+
+  .badge-success {
+    @apply badge bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400;
+  }
+
+  .badge-warning {
+    @apply badge bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400;
+  }
+
+  .badge-error {
+    @apply badge bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400;
+  }
+
+  .badge-info {
+    @apply badge bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400;
+  }
+
+  .badge-primary {
+    @apply badge bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400;
+  }
+
+  /* Input */
+  .input-field {
+    @apply w-full px-4 py-3 rounded-xl text-sm font-medium outline-none;
+    @apply bg-slate-100 border border-slate-200 text-slate-900 placeholder-slate-400;
+    @apply dark:bg-white/10 dark:border-white/10 dark:text-white dark:placeholder-slate-500;
+    @apply focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+    @apply transition-all duration-200;
+  }
+
+  /* Gradient Text */
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary-400 via-violet-400 to-accent-400 bg-clip-text text-transparent;
+  }
+
+  /* Section heading */
+  .section-title {
+    @apply text-xl font-bold text-slate-900 dark:text-white;
+  }
+
+  .section-subtitle {
+    @apply text-sm text-slate-500 dark:text-slate-400 mt-1;
+  }
+
+  /* Status dot */
+  .status-dot {
+    @apply w-2 h-2 rounded-full;
+  }
+
+  .status-dot.online {
+    @apply bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.8)];
+  }
+
+  .status-dot.offline {
+    @apply bg-slate-400;
+  }
+}
+
+@layer utilities {
+  .text-gradient-primary {
+    background: linear-gradient(135deg, #818cf8, #6366f1, #06b6d4);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+
+  .bg-grid {
+    background-image: linear-gradient(rgba(99,102,241,0.05) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(99,102,241,0.05) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .bg-dots {
+    background-image: radial-gradient(rgba(99,102,241,0.2) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  /* Hide scrollbar but keep scroll functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Thin scrollbar */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148,163,184,0.5) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: rgba(148,163,184,0.5);
+    border-radius: 4px;
+  }
+}
+
+/* Google Maps container fix — must NOT have overflow:hidden on parent */
+.gm-style {
+  font-family: 'Inter', sans-serif !important;
+}
+.gm-style-iw-c {
+  border-radius: 16px !important;
+  padding: 0 !important;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.15) !important;
+}
+.gm-style-iw-d {
+  overflow: hidden !important;
+}
+.gm-style-iw-t::after {
+  display: none !important;
+}
+.gm-ui-hover-effect {
+  top: 4px !important;
+  right: 4px !important;
+}
+
+/* Color scheme fixes for HTML5 date/time inputs in dark mode */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(0.9);
+  cursor: pointer;
+}
+input[type="date"] {
+  color-scheme: dark;
+}
+
+

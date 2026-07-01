@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+motor
+pydantic
+pydantic-settings
+pyjwt
+passlib[bcrypt]
+python-dotenv
+bcrypt
+google-generativeai
+cloudinary
+httpx
+scikit-learn
+numpy
