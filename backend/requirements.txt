@@ -12,3 +12,4 @@ cloudinary
 httpx
 scikit-learn
 numpy
+email-validator
