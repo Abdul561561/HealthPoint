@@ -337,8 +337,11 @@ export default function Doctors() {
     setSelectedDoctor(null);
 
     try {
-      const results = await searchNearbyDoctors(coords.lat, coords.lng, specialty, radius);
-      setDoctors(results);
+     const doctors = await searchNearbyDoctors(
+    latitude,
+    longitude
+);
+      setDoctors(doctors);
     } catch (e) {
       console.error(e);
       setError('Could not query OpenStreetMap for nearby healthcare locations.');

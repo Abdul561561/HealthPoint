@@ -182,8 +182,11 @@ export default function Pharmacy() {
     if (!coords) return;
     setPharmacyLoading(true);
     try {
-      const results = await searchNearbyPharmacies(coords.lat, coords.lng, pharmacyRadius, openOnly);
-      setPharmacies(results);
+     const pharmacies = await searchNearbyPharmacies(
+    latitude,
+    longitude
+);
+      setPharmacies(pharmacies);
     } catch (e) {
       console.error('Failed to fetch pharmacies:', e);
       setPharmacies([]);
