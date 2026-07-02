@@ -211,8 +211,13 @@ export default function Pharmacy() {
         attributionControl: false
       }).setView([coords.lat, coords.lng], 14);
 
-      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19
+      const isDarkMode = document.documentElement.classList.contains('dark');
+      const tileUrl = isDarkMode 
+        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+        : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+      window.L.tileLayer(tileUrl, {
+        maxZoom: 19,
+        attribution: isDarkMode ? '&copy; OpenStreetMap &copy; CARTO' : '&copy; OpenStreetMap'
       }).addTo(mapInstanceRef.current);
 
       window.L.control.zoom({ position: 'bottomright' }).addTo(mapInstanceRef.current);

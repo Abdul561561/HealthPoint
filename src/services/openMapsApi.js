@@ -139,80 +139,62 @@ export async function searchNearbyDoctors(lat, lng, specialty = 'All', radius = 
     return doctors.sort((a, b) => a.distance_km - b.distance_km);
   } catch (error) {
     console.error('Failed to query Overpass API for doctors, using localized fallbacks:', error);
-    return [
-      {
-        place_id: "fb_doc_1",
-        name: "Dr. Sagar Ithape (Consultant Physician)",
-        specialty: "General Physician",
-        hospital: "Private Practice",
-        address: "32, 100 Feet Rd, Indiranagar, Bengaluru",
-        rating: 4.8,
-        reviews: 142,
-        open_now: true,
-        distance_km: 0.8,
-        latitude: lat + 0.003,
-        longitude: lng - 0.004,
-        phone: "+91 80 4012 3456",
-        website: "https://healthpoint.ai",
+    const baseDoctors = [
+      { name: "Dr. Sagar Ithape (Consultant Physician)", specialty: "General Physician", hospital: "Private Practice", address: "32, 100 Feet Rd, Indiranagar, Bengaluru", rating: 4.8, reviews: 142, phone: "+91 80 4012 3456", website: "https://healthpoint.ai" },
+      { name: "Dr. Ananya Rao", specialty: "Cardiologist", hospital: "Metro Cardiac Center", address: "15, HAL 3rd Stage, Jeevan Bima Nagar, Bengaluru", rating: 4.9, reviews: 98, phone: "+91 80 4012 7890", website: "https://healthpoint.ai" },
+      { name: "Dr. Rajesh Gowda", specialty: "Dermatologist", hospital: "Skin Health Clinic", address: "412, Outer Ring Rd, Kalyan Nagar, Bengaluru", rating: 4.6, reviews: 215, phone: "+91 80 4012 5555", website: "" },
+      { name: "Dr. Sarah Mitchell", specialty: "Pediatrician", hospital: "Aster CMI Hospital", address: "Sahakar Nagar, Hebbal, Bengaluru", rating: 4.7, reviews: 180, phone: "+91 80 4012 1111", website: "https://healthpoint.ai" },
+      { name: "Dr. Amit Verma", specialty: "Neurologist", hospital: "Brain & Spine Institute", address: "55, Double Road, Indiranagar, Bengaluru", rating: 4.9, reviews: 110, phone: "+91 80 4012 8888", website: "" },
+      { name: "Dr. Kavita Rao", specialty: "Gynecologist", hospital: "Lotus Women Care Clinic", address: "12, 12th Main Rd, Indiranagar, Bengaluru", rating: 4.8, reviews: 154, phone: "+91 80 4012 9999", website: "https://healthpoint.ai" },
+      { name: "Dr. James Chen", specialty: "Orthopedist", hospital: "Bone & Joint Center", address: "89, Rest House Rd, Shanthala Nagar, Bengaluru", rating: 4.5, reviews: 67, phone: "+91 80 4012 2222", website: "" },
+      { name: "Dr. Priya Patel", specialty: "Ophthalmologist", hospital: "Vision Eye Care Hospital", address: "234, Outer Ring Rd, Kalyan Nagar, Bengaluru", rating: 4.7, reviews: 130, phone: "+91 80 4012 6666", website: "https://healthpoint.ai" },
+      { name: "Dr. Robert Kim", specialty: "Dentist", hospital: "Smile Dental Clinic", address: "45, HAL 3rd Stage, Bengaluru", rating: 4.8, reviews: 92, phone: "+91 80 4012 4444", website: "" },
+      { name: "Dr. Michael Thompson", specialty: "Psychiatrist", hospital: "Mind Wellness Center", address: "67, CMH Road, Indiranagar, Bengaluru", rating: 4.6, reviews: 78, phone: "+91 80 4012 3333", website: "https://healthpoint.ai" },
+      { name: "Dr. Sandeep Hegde", specialty: "ENT", hospital: "Ear Nose Throat Clinic", address: "10, Rest House Rd, Bengaluru", rating: 4.7, reviews: 104, phone: "+91 80 4012 1212", website: "" },
+      { name: "Dr. Emily Rodriguez", specialty: "General Physician", hospital: "Wellness Family Clinic", address: "88, HAL 2nd Stage, Bengaluru", rating: 4.8, reviews: 189, phone: "+91 80 4012 5678", website: "https://healthpoint.ai" }
+    ];
+
+    const offsets = [
+      { dLat: 0.003, dLng: -0.004 },
+      { dLat: -0.005, dLng: 0.006 },
+      { dLat: 0.008, dLng: 0.007 },
+      { dLat: 0.012, dLng: -0.010 },
+      { dLat: -0.003, dLng: -0.005 },
+      { dLat: 0.006, dLng: -0.002 },
+      { dLat: -0.008, dLng: 0.009 },
+      { dLat: 0.010, dLng: 0.011 },
+      { dLat: -0.012, dLng: -0.008 },
+      { dLat: 0.004, dLng: 0.003 },
+      { dLat: -0.002, dLng: 0.005 },
+      { dLat: 0.001, dLng: -0.006 }
+    ];
+
+    return baseDoctors.map((doc, idx) => {
+      const offset = offsets[idx % offsets.length];
+      const plat = lat + offset.dLat;
+      const plng = lng + offset.dLng;
+      const distance = haversineDistance(lat, lng, plat, plng);
+      const isSelected = (idx % 3 === 0);
+
+      return {
+        place_id: `fb_doc_${idx + 1}`,
+        name: doc.name,
+        specialty: doc.specialty,
+        hospital: doc.hospital,
+        address: doc.address,
+        rating: doc.rating,
+        reviews: doc.reviews,
+        open_now: isSelected || (idx % 2 === 0),
+        distance_km: distance,
+        latitude: plat,
+        longitude: plng,
+        phone: doc.phone,
+        website: doc.website,
         photo_url: "",
-        maps_url: `https://www.openstreetmap.org/#map=18/${lat + 0.003}/${lng - 0.004}`
-      },
-      {
-        place_id: "fb_doc_2",
-        name: "Dr. Ananya Rao",
-        specialty: "Cardiologist",
-        hospital: "Metro Cardiac Center",
-        address: "15, HAL 3rd Stage, Jeevan Bima Nagar, Bengaluru",
-        rating: 4.9,
-        reviews: 98,
-        open_now: true,
-        distance_km: 1.4,
-        latitude: lat - 0.005,
-        longitude: lng + 0.006,
-        phone: "+91 80 4012 7890",
-        website: "https://healthpoint.ai",
-        photo_url: "",
-        maps_url: `https://www.openstreetmap.org/#map=18/${lat - 0.005}/${lng + 0.006}`
-      },
-      {
-        place_id: "fb_doc_3",
-        name: "Dr. Rajesh Gowda",
-        specialty: "Dermatologist",
-        hospital: "Skin Health Clinic",
-        address: "412, Outer Ring Rd, Kalyan Nagar, Bengaluru",
-        rating: 4.6,
-        reviews: 215,
-        open_now: false,
-        distance_km: 2.1,
-        latitude: lat + 0.008,
-        longitude: lng + 0.007,
-        phone: "+91 80 4012 5555",
-        website: "",
-        photo_url: "",
-        maps_url: `https://www.openstreetmap.org/#map=18/${lat + 0.008}/${lng + 0.007}`
-      },
-      {
-        place_id: "fb_doc_4",
-        name: "Dr. Sarah Mitchell",
-        specialty: "Pediatrician",
-        hospital: "Aster CMI Hospital",
-        address: "Sahakar Nagar, Hebbal, Bengaluru",
-        rating: 4.7,
-        reviews: 180,
-        open_now: true,
-        distance_km: 3.5,
-        latitude: lat + 0.012,
-        longitude: lng - 0.010,
-        phone: "+91 80 4012 1111",
-        website: "https://healthpoint.ai",
-        photo_url: "",
-        maps_url: `https://www.openstreetmap.org/#map=18/${lat + 0.012}/${lng - 0.010}`
-      }
-    ].filter(d => specialty === 'All' || d.specialty.toLowerCase() === specialty.toLowerCase())
-     .map(d => ({
-       ...d,
-       distance_km: haversineDistance(lat, lng, d.latitude, d.longitude)
-     })).sort((a, b) => a.distance_km - b.distance_km);
+        maps_url: `https://www.openstreetmap.org/#map=18/${plat}/${plng}`
+      };
+    }).filter(d => specialty === 'All' || d.specialty.toLowerCase() === specialty.toLowerCase())
+      .sort((a, b) => a.distance_km - b.distance_km);
   }
 }
 
@@ -284,60 +266,61 @@ export async function searchNearbyPharmacies(lat, lng, radius = 5000, openOnly =
     return pharmacies.sort((a, b) => a.distance_km - b.distance_km);
   } catch (error) {
     console.error('Failed to query Overpass API for pharmacies, using localized fallbacks:', error);
-    return [
-      {
-        place_id: "fb_ph_1",
-        name: "Apollo Pharmacy 24/7",
-        address: "74, Double Road, Indiranagar, Bengaluru",
-        rating: 4.7,
-        reviews: 320,
-        open_now: true,
-        is_emergency: true,
-        distance_km: 0.5,
-        latitude: lat + 0.002,
-        longitude: lng + 0.002,
-        phone: "+91 80 2525 1111",
-        website: "https://apollopharmacy.in",
+    const basePharmacies = [
+      { name: "Apollo Pharmacy 24/7", address: "74, Double Road, Indiranagar, Bengaluru", rating: 4.7, reviews: 320, is_emergency: true, phone: "+91 80 2525 1111", website: "https://apollopharmacy.in" },
+      { name: "MedPlus Indiranagar", address: "18, CMH Road, Indiranagar, Bengaluru", rating: 4.5, reviews: 145, is_emergency: false, phone: "+91 80 2525 2222", website: "https://medplusmart.com" },
+      { name: "Trust Chemist & Druggist", address: "8, Rest House Rd, Shanthala Nagar, Ashok Nagar, Bengaluru", rating: 4.6, reviews: 210, is_emergency: true, phone: "+91 80 2525 3333", website: "" },
+      { name: "Fortis Healthworld Pharmacy", address: "14, Cunningham Road, Vasanth Nagar, Bengaluru", rating: 4.8, reviews: 165, is_emergency: true, phone: "+91 80 2525 4444", website: "https://fortishealthcare.com" },
+      { name: "Wellness Forever Pharmacy 24/7", address: "33, 100 Feet Rd, Indiranagar, Bengaluru", rating: 4.9, reviews: 420, is_emergency: true, phone: "+91 80 2525 5555", website: "https://wellnessforever.com" },
+      { name: "Guardian Lifecare Pharmacy", address: "56, CMH Road, Indiranagar, Bengaluru", rating: 4.4, reviews: 95, is_emergency: false, phone: "+91 80 2525 6666", website: "" },
+      { name: "Aster Pharmacy", address: "12, Outer Ring Rd, Kalyan Nagar, Bengaluru", rating: 4.7, reviews: 132, is_emergency: true, phone: "+91 80 2525 7777", website: "https://asterpharmacy.in" },
+      { name: "Frank Ross Pharmacy", address: "2, Rest House Rd, Bengaluru", rating: 4.5, reviews: 78, is_emergency: false, phone: "+91 80 2525 8888", website: "" },
+      { name: "1mg Digital Pharmacy Store", address: "88, HAL 2nd Stage, Indiranagar, Bengaluru", rating: 4.8, reviews: 250, is_emergency: false, phone: "+91 80 2525 9999", website: "https://1mg.com" },
+      { name: "Netmeds Pharmacy Store", address: "40, Double Road, Bengaluru", rating: 4.6, reviews: 180, is_emergency: true, phone: "+91 80 2525 1010", website: "https://netmeds.com" },
+      { name: "Lalbagh Medical Hall", address: "10, Lalbagh Fort Rd, Mavalli, Bengaluru", rating: 4.5, reviews: 85, is_emergency: false, phone: "+91 80 2525 2020", website: "" },
+      { name: "Dhanvantari Medical & General Store", address: "62, CMH Road, Bengaluru", rating: 4.6, reviews: 110, is_emergency: true, phone: "+91 80 2525 3030", website: "" }
+    ];
+
+    const offsets = [
+      { dLat: 0.002, dLng: 0.002 },
+      { dLat: -0.004, dLng: -0.003 },
+      { dLat: 0.007, dLng: -0.008 },
+      { dLat: 0.005, dLng: 0.005 },
+      { dLat: -0.006, dLng: 0.006 },
+      { dLat: 0.009, dLng: -0.002 },
+      { dLat: -0.003, dLng: -0.009 },
+      { dLat: 0.011, dLng: 0.008 },
+      { dLat: -0.008, dLng: 0.004 },
+      { dLat: 0.004, dLng: -0.006 },
+      { dLat: -0.010, dLng: -0.007 },
+      { dLat: 0.001, dLng: 0.009 }
+    ];
+
+    return basePharmacies.map((pharm, idx) => {
+      const offset = offsets[idx % offsets.length];
+      const plat = lat + offset.dLat;
+      const plng = lng + offset.dLng;
+      const distance = haversineDistance(lat, lng, plat, plng);
+      const isSelected = (idx % 4 === 0);
+
+      return {
+        place_id: `fb_ph_${idx + 1}`,
+        name: pharm.name,
+        address: pharm.address,
+        rating: pharm.rating,
+        reviews: pharm.reviews,
+        open_now: isSelected || (idx % 2 === 0),
+        is_emergency: pharm.is_emergency,
+        distance_km: distance,
+        latitude: plat,
+        longitude: plng,
+        phone: pharm.phone,
+        website: pharm.website,
         photo_url: "",
-        maps_url: `https://www.openstreetmap.org/#map=18/${lat + 0.002}/${lng + 0.002}`
-      },
-      {
-        place_id: "fb_ph_2",
-        name: "MedPlus Indiranagar",
-        address: "18, CMH Road, Indiranagar, Bengaluru",
-        rating: 4.5,
-        reviews: 145,
-        open_now: true,
-        is_emergency: false,
-        distance_km: 1.1,
-        latitude: lat - 0.004,
-        longitude: lng - 0.003,
-        phone: "+91 80 2525 2222",
-        website: "https://medplusmart.com",
-        photo_url: "",
-        maps_url: `https://www.openstreetmap.org/#map=18/${lat - 0.004}/${lng - 0.003}`
-      },
-      {
-        place_id: "fb_ph_3",
-        name: "Trust Chemist & Druggist",
-        address: "8, Rest House Rd, Shanthala Nagar, Ashok Nagar, Bengaluru",
-        rating: 4.6,
-        reviews: 210,
-        open_now: true,
-        is_emergency: true,
-        distance_km: 2.3,
-        latitude: lat + 0.007,
-        longitude: lng - 0.008,
-        phone: "+91 80 2525 3333",
-        website: "",
-        photo_url: "",
-        maps_url: `https://www.openstreetmap.org/#map=18/${lat + 0.007}/${lng - 0.008}`
-      }
-    ].filter(p => !openOnly || p.open_now)
-     .map(p => ({
-       ...p,
-       distance_km: haversineDistance(lat, lng, p.latitude, p.longitude)
-     })).sort((a, b) => a.distance_km - b.distance_km);
+        maps_url: `https://www.openstreetmap.org/#map=18/${plat}/${plng}`
+      };
+    }).filter(p => !openOnly || p.open_now)
+      .sort((a, b) => a.distance_km - b.distance_km);
   }
 }
 
