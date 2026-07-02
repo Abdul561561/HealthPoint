@@ -9,6 +9,7 @@ import api from '../services/api';
 import { useDispatch } from 'react-redux';
 import { bookAppointment } from '../redux/slices/healthSlice';
 import { addToast } from '../redux/slices/uiSlice';
+import { useTheme } from '../hooks/useTheme';
 import { searchNearbyDoctors, searchAddress, getRoute } from '../services/openMapsApi';
 
 const SPECIALTIES = [
@@ -219,9 +220,12 @@ export default function Doctors() {
   const [bookingSuccess, setBookingSuccess] = useState(false);
   const [viewMode, setViewMode] = useState('split');
 
+  const { isDark } = useTheme();
+
   // Map references
   const mapDivRef = useRef(null);
   const mapInstanceRef = useRef(null);
+  const tileLayerRef = useRef(null);
   const userMarkerRef = useRef(null);
   const markersRef = useRef([]);
   const routePolylineRef = useRef(null);
@@ -254,21 +258,23 @@ export default function Doctors() {
         attributionControl: false
       }).setView([coords.lat, coords.lng], 14);
 
-      // Add dark tiles for dark mode, openstreetmap for light mode
-      const isDarkMode = document.documentElement.classList.contains('dark');
-      const tileUrl = isDarkMode 
-        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-        : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-      window.L.tileLayer(tileUrl, {
-        maxZoom: 19,
-        attribution: isDarkMode ? '&copy; OpenStreetMap &copy; CARTO' : '&copy; OpenStreetMap'
-      }).addTo(mapInstanceRef.current);
-
       // Add zoom control at bottom right
       window.L.control.zoom({ position: 'bottomright' }).addTo(mapInstanceRef.current);
     } else {
       mapInstanceRef.current.setView([coords.lat, coords.lng], 14);
     }
+
+    // Set tile layer dynamically matching active theme
+    if (tileLayerRef.current) {
+      tileLayerRef.current.remove();
+    }
+    const tileUrl = isDark 
+      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+      : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+    tileLayerRef.current = window.L.tileLayer(tileUrl, {
+      maxZoom: 19,
+      attribution: isDark ? '&copy; OpenStreetMap &copy; CARTO' : '&copy; OpenStreetMap'
+    }).addTo(mapInstanceRef.current);
 
     // Add User Location Marker
     if (userMarkerRef.current) userMarkerRef.current.remove();
@@ -289,7 +295,7 @@ export default function Doctors() {
       .addTo(mapInstanceRef.current)
       .bindPopup('<strong class="text-xs">Your Current Location</strong>');
 
-  }, [coords, viewMode]);
+  }, [coords, viewMode, isDark]);
 
   // Address search suggestions (Nominatim autocomplete debounce)
   const handleAddressInputChange = (e) => {

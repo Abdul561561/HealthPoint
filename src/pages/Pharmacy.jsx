@@ -17,6 +17,7 @@ import {
   deletePrescriptionFile
 } from '../redux/slices/pharmacySlice';
 import { addToast } from '../redux/slices/uiSlice';
+import { useTheme } from '../hooks/useTheme';
 import api from '../services/api';
 import { searchNearbyPharmacies, searchAddress, getRoute } from '../services/openMapsApi';
 
@@ -150,9 +151,12 @@ export default function Pharmacy() {
   const [prescriptionFile, setPrescriptionFile] = useState(null);
   const [prescriptionPreview, setPrescriptionPreview] = useState(null);
 
+  const { isDark } = useTheme();
+
   // Map references
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
+  const tileLayerRef = useRef(null);
   const markersRef = useRef([]);
   const userMarkerRef = useRef(null);
   const routePolylineRef = useRef(null);
@@ -211,19 +215,22 @@ export default function Pharmacy() {
         attributionControl: false
       }).setView([coords.lat, coords.lng], 14);
 
-      const isDarkMode = document.documentElement.classList.contains('dark');
-      const tileUrl = isDarkMode 
-        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-        : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-      window.L.tileLayer(tileUrl, {
-        maxZoom: 19,
-        attribution: isDarkMode ? '&copy; OpenStreetMap &copy; CARTO' : '&copy; OpenStreetMap'
-      }).addTo(mapInstanceRef.current);
-
       window.L.control.zoom({ position: 'bottomright' }).addTo(mapInstanceRef.current);
     } else {
       mapInstanceRef.current.setView([coords.lat, coords.lng], 14);
     }
+
+    // Set tile layer dynamically matching active theme
+    if (tileLayerRef.current) {
+      tileLayerRef.current.remove();
+    }
+    const tileUrl = isDark 
+      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+      : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+    tileLayerRef.current = window.L.tileLayer(tileUrl, {
+      maxZoom: 19,
+      attribution: isDark ? '&copy; OpenStreetMap &copy; CARTO' : '&copy; OpenStreetMap'
+    }).addTo(mapInstanceRef.current);
 
     // Add User marker
     if (userMarkerRef.current) userMarkerRef.current.remove();
@@ -244,7 +251,7 @@ export default function Pharmacy() {
       .addTo(mapInstanceRef.current)
       .bindPopup('<strong class="text-xs">Your Location</strong>');
 
-  }, [activeTab, coords]);
+  }, [activeTab, coords, isDark]);
 
   // Update pharmacy markers on map
   useEffect(() => {

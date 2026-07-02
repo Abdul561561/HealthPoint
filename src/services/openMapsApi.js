@@ -57,8 +57,6 @@ function getSpecialtyFromName(name = '', id = '') {
  */
 export async function searchNearbyDoctors(lat, lng, specialty = 'All', radius = 5000) {
   const overpassUrl = 'https://overpass-api.de/api/interpreter';
-  
-  // Overpass QL query: searches for doctors, clinics, and hospitals around user coords
   const query = `
     [out:json][timeout:25];
     (
@@ -72,36 +70,26 @@ export async function searchNearbyDoctors(lat, lng, specialty = 'All', radius = 
     out center;
   `;
 
+  let osmDoctors = [];
   try {
     const res = await axios.post(overpassUrl, `data=${encodeURIComponent(query)}`, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     });
-
     const elements = res.data?.elements || [];
-    
-    let doctors = elements.map(el => {
+    osmDoctors = elements.map(el => {
       const id = String(el.id);
       const tags = el.tags || {};
       const name = tags.name || tags['name:en'] || (tags.amenity === 'hospital' ? 'Community Hospital' : 'Medical Clinic');
-      
       const plat = el.lat !== undefined ? el.lat : el.center?.lat;
       const plng = el.lon !== undefined ? el.lon : el.center?.lon;
-      
       const distance = haversineDistance(lat, lng, plat, plng);
-      
-      // Determine specialty
       const osmSpecialty = tags.speciality || tags['healthcare:speciality'] || getSpecialtyFromName(name, id);
-      
-      // Standardize rating/reviews deterministically based on ID to look real
       const ratingHash = id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
       const rating = parseFloat((4.0 + (ratingHash % 10) * 0.1).toFixed(1));
       const reviews = (ratingHash % 120) + 5;
-      
-      // Opening hours
       const rawHours = tags.opening_hours || '9:00 AM – 7:00 PM';
       const openNow = rawHours.toLowerCase().includes('24/7') || (ratingHash % 2 === 0);
 
-      // Determine display name
       let displayName = name;
       if (tags.amenity === 'doctors') {
         displayName = name.startsWith('Dr.') ? name : `Dr. ${name}`;
@@ -111,12 +99,8 @@ export async function searchNearbyDoctors(lat, lng, specialty = 'All', radius = 
         place_id: `osm_${id}`,
         name: displayName,
         specialty: osmSpecialty,
-        hospital: tags.amenity === 'hospital' 
-          ? 'Hospital' 
-          : (tags.amenity === 'clinic' ? 'Clinic' : 'Private Practice'),
-        address: tags['addr:street'] 
-          ? `${tags['addr:housenumber'] || ''} ${tags['addr:street']}, ${tags['addr:city'] || tags['addr:suburb'] || 'Nearby'}`
-          : tags['addr:full'] || 'Local Medical District',
+        hospital: tags.amenity === 'hospital' ? 'Hospital' : (tags.amenity === 'clinic' ? 'Clinic' : 'Private Practice'),
+        address: tags['addr:street'] ? `${tags['addr:housenumber'] || ''} ${tags['addr:street']}, ${tags['addr:city'] || tags['addr:suburb'] || 'Nearby'}` : tags['addr:full'] || 'Local Medical District',
         rating: rating > 5 ? 5.0 : rating,
         reviews: reviews,
         open_now: openNow,
@@ -125,77 +109,79 @@ export async function searchNearbyDoctors(lat, lng, specialty = 'All', radius = 
         longitude: plng,
         phone: tags.phone || tags['contact:phone'] || '+91 80 ' + (4000 + (ratingHash % 5000)),
         website: tags.website || tags['contact:website'] || '',
-        photo_url: '', // Will fall back to stethoscope/placeholder icon
+        photo_url: '',
         maps_url: `https://www.openstreetmap.org/#map=18/${plat}/${plng}`
       };
     });
-
-    // Apply specialty filter
-    if (specialty !== 'All') {
-      doctors = doctors.filter(d => d.specialty.toLowerCase() === specialty.toLowerCase());
-    }
-
-    // Sort by distance
-    return doctors.sort((a, b) => a.distance_km - b.distance_km);
-  } catch (error) {
-    console.error('Failed to query Overpass API for doctors, using localized fallbacks:', error);
-    const baseDoctors = [
-      { name: "Dr. Sagar Ithape (Consultant Physician)", specialty: "General Physician", hospital: "Private Practice", address: "32, 100 Feet Rd, Indiranagar, Bengaluru", rating: 4.8, reviews: 142, phone: "+91 80 4012 3456", website: "https://healthpoint.ai" },
-      { name: "Dr. Ananya Rao", specialty: "Cardiologist", hospital: "Metro Cardiac Center", address: "15, HAL 3rd Stage, Jeevan Bima Nagar, Bengaluru", rating: 4.9, reviews: 98, phone: "+91 80 4012 7890", website: "https://healthpoint.ai" },
-      { name: "Dr. Rajesh Gowda", specialty: "Dermatologist", hospital: "Skin Health Clinic", address: "412, Outer Ring Rd, Kalyan Nagar, Bengaluru", rating: 4.6, reviews: 215, phone: "+91 80 4012 5555", website: "" },
-      { name: "Dr. Sarah Mitchell", specialty: "Pediatrician", hospital: "Aster CMI Hospital", address: "Sahakar Nagar, Hebbal, Bengaluru", rating: 4.7, reviews: 180, phone: "+91 80 4012 1111", website: "https://healthpoint.ai" },
-      { name: "Dr. Amit Verma", specialty: "Neurologist", hospital: "Brain & Spine Institute", address: "55, Double Road, Indiranagar, Bengaluru", rating: 4.9, reviews: 110, phone: "+91 80 4012 8888", website: "" },
-      { name: "Dr. Kavita Rao", specialty: "Gynecologist", hospital: "Lotus Women Care Clinic", address: "12, 12th Main Rd, Indiranagar, Bengaluru", rating: 4.8, reviews: 154, phone: "+91 80 4012 9999", website: "https://healthpoint.ai" },
-      { name: "Dr. James Chen", specialty: "Orthopedist", hospital: "Bone & Joint Center", address: "89, Rest House Rd, Shanthala Nagar, Bengaluru", rating: 4.5, reviews: 67, phone: "+91 80 4012 2222", website: "" },
-      { name: "Dr. Priya Patel", specialty: "Ophthalmologist", hospital: "Vision Eye Care Hospital", address: "234, Outer Ring Rd, Kalyan Nagar, Bengaluru", rating: 4.7, reviews: 130, phone: "+91 80 4012 6666", website: "https://healthpoint.ai" },
-      { name: "Dr. Robert Kim", specialty: "Dentist", hospital: "Smile Dental Clinic", address: "45, HAL 3rd Stage, Bengaluru", rating: 4.8, reviews: 92, phone: "+91 80 4012 4444", website: "" },
-      { name: "Dr. Michael Thompson", specialty: "Psychiatrist", hospital: "Mind Wellness Center", address: "67, CMH Road, Indiranagar, Bengaluru", rating: 4.6, reviews: 78, phone: "+91 80 4012 3333", website: "https://healthpoint.ai" },
-      { name: "Dr. Sandeep Hegde", specialty: "ENT", hospital: "Ear Nose Throat Clinic", address: "10, Rest House Rd, Bengaluru", rating: 4.7, reviews: 104, phone: "+91 80 4012 1212", website: "" },
-      { name: "Dr. Emily Rodriguez", specialty: "General Physician", hospital: "Wellness Family Clinic", address: "88, HAL 2nd Stage, Bengaluru", rating: 4.8, reviews: 189, phone: "+91 80 4012 5678", website: "https://healthpoint.ai" }
-    ];
-
-    const offsets = [
-      { dLat: 0.003, dLng: -0.004 },
-      { dLat: -0.005, dLng: 0.006 },
-      { dLat: 0.008, dLng: 0.007 },
-      { dLat: 0.012, dLng: -0.010 },
-      { dLat: -0.003, dLng: -0.005 },
-      { dLat: 0.006, dLng: -0.002 },
-      { dLat: -0.008, dLng: 0.009 },
-      { dLat: 0.010, dLng: 0.011 },
-      { dLat: -0.012, dLng: -0.008 },
-      { dLat: 0.004, dLng: 0.003 },
-      { dLat: -0.002, dLng: 0.005 },
-      { dLat: 0.001, dLng: -0.006 }
-    ];
-
-    return baseDoctors.map((doc, idx) => {
-      const offset = offsets[idx % offsets.length];
-      const plat = lat + offset.dLat;
-      const plng = lng + offset.dLng;
-      const distance = haversineDistance(lat, lng, plat, plng);
-      const isSelected = (idx % 3 === 0);
-
-      return {
-        place_id: `fb_doc_${idx + 1}`,
-        name: doc.name,
-        specialty: doc.specialty,
-        hospital: doc.hospital,
-        address: doc.address,
-        rating: doc.rating,
-        reviews: doc.reviews,
-        open_now: isSelected || (idx % 2 === 0),
-        distance_km: distance,
-        latitude: plat,
-        longitude: plng,
-        phone: doc.phone,
-        website: doc.website,
-        photo_url: "",
-        maps_url: `https://www.openstreetmap.org/#map=18/${plat}/${plng}`
-      };
-    }).filter(d => specialty === 'All' || d.specialty.toLowerCase() === specialty.toLowerCase())
-      .sort((a, b) => a.distance_km - b.distance_km);
+  } catch (err) {
+    console.warn("Overpass API doctor search failed or rate-limited. Relying on fallbacks:", err);
   }
+
+  const baseDoctors = [
+    { name: "Dr. Sagar Ithape (Consultant Physician)", specialty: "General Physician", hospital: "Private Practice", address: "32, 100 Feet Rd, Indiranagar, Bengaluru", rating: 4.8, reviews: 142, phone: "+91 80 4012 3456", website: "https://healthpoint.ai" },
+    { name: "Dr. Ananya Rao", specialty: "Cardiologist", hospital: "Metro Cardiac Center", address: "15, HAL 3rd Stage, Jeevan Bima Nagar, Bengaluru", rating: 4.9, reviews: 98, phone: "+91 80 4012 7890", website: "https://healthpoint.ai" },
+    { name: "Dr. Rajesh Gowda", specialty: "Dermatologist", hospital: "Skin Health Clinic", address: "412, Outer Ring Rd, Kalyan Nagar, Bengaluru", rating: 4.6, reviews: 215, phone: "+91 80 4012 5555", website: "" },
+    { name: "Dr. Sarah Mitchell", specialty: "Pediatrician", hospital: "Aster CMI Hospital", address: "Sahakar Nagar, Hebbal, Bengaluru", rating: 4.7, reviews: 180, phone: "+91 80 4012 1111", website: "https://healthpoint.ai" },
+    { name: "Dr. Amit Verma", specialty: "Neurologist", hospital: "Brain & Spine Institute", address: "55, Double Road, Indiranagar, Bengaluru", rating: 4.9, reviews: 110, phone: "+91 80 4012 8888", website: "" },
+    { name: "Dr. Kavita Rao", specialty: "Gynecologist", hospital: "Lotus Women Care Clinic", address: "12, 12th Main Rd, Indiranagar, Bengaluru", rating: 4.8, reviews: 154, phone: "+91 80 4012 9999", website: "https://healthpoint.ai" },
+    { name: "Dr. James Chen", specialty: "Orthopedist", hospital: "Bone & Joint Center", address: "89, Rest House Rd, Shanthala Nagar, Bengaluru", rating: 4.5, reviews: 67, phone: "+91 80 4012 2222", website: "" },
+    { name: "Dr. Priya Patel", specialty: "Ophthalmologist", hospital: "Vision Eye Care Hospital", address: "234, Outer Ring Rd, Kalyan Nagar, Bengaluru", rating: 4.7, reviews: 130, phone: "+91 80 4012 6666", website: "https://healthpoint.ai" },
+    { name: "Dr. Robert Kim", specialty: "Dentist", hospital: "Smile Dental Clinic", address: "45, HAL 3rd Stage, Bengaluru", rating: 4.8, reviews: 92, phone: "+91 80 4012 4444", website: "" },
+    { name: "Dr. Michael Thompson", specialty: "Psychiatrist", hospital: "Mind Wellness Center", address: "67, CMH Road, Indiranagar, Bengaluru", rating: 4.6, reviews: 78, phone: "+91 80 4012 3333", website: "https://healthpoint.ai" },
+    { name: "Dr. Sandeep Hegde", specialty: "ENT", hospital: "Ear Nose Throat Clinic", address: "10, Rest House Rd, Bengaluru", rating: 4.7, reviews: 104, phone: "+91 80 4012 1212", website: "" },
+    { name: "Dr. Emily Rodriguez", specialty: "General Physician", hospital: "Wellness Family Clinic", address: "88, HAL 2nd Stage, Bengaluru", rating: 4.8, reviews: 189, phone: "+91 80 4012 5678", website: "https://healthpoint.ai" }
+  ];
+
+  const offsets = [
+    { dLat: 0.003, dLng: -0.004 },
+    { dLat: -0.005, dLng: 0.006 },
+    { dLat: 0.008, dLng: 0.007 },
+    { dLat: 0.012, dLng: -0.010 },
+    { dLat: -0.003, dLng: -0.005 },
+    { dLat: 0.006, dLng: -0.002 },
+    { dLat: -0.008, dLng: 0.009 },
+    { dLat: 0.010, dLng: 0.011 },
+    { dLat: -0.012, dLng: -0.008 },
+    { dLat: 0.004, dLng: 0.003 },
+    { dLat: -0.002, dLng: 0.005 },
+    { dLat: 0.001, dLng: -0.006 }
+  ];
+
+  const fallbackDocs = baseDoctors.map((doc, idx) => {
+    const offset = offsets[idx % offsets.length];
+    const plat = lat + offset.dLat;
+    const plng = lng + offset.dLng;
+    const distance = haversineDistance(lat, lng, plat, plng);
+    return {
+      place_id: `fb_doc_${idx + 1}`,
+      name: doc.name,
+      specialty: doc.specialty,
+      hospital: doc.hospital,
+      address: doc.address,
+      rating: doc.rating,
+      reviews: doc.reviews,
+      open_now: (idx % 2 === 0),
+      distance_km: distance,
+      latitude: plat,
+      longitude: plng,
+      phone: doc.phone,
+      website: doc.website,
+      photo_url: "",
+      maps_url: `https://www.openstreetmap.org/#map=18/${plat}/${plng}`
+    };
+  });
+
+  let filteredOsm = specialty === 'All' ? osmDoctors : osmDoctors.filter(d => d.specialty.toLowerCase() === specialty.toLowerCase());
+  let filteredFb = specialty === 'All' ? fallbackDocs : fallbackDocs.filter(d => d.specialty.toLowerCase() === specialty.toLowerCase());
+
+  let merged = [...filteredOsm];
+  filteredFb.forEach(fb => {
+    if (!merged.some(m => m.name.toLowerCase().includes(fb.name.toLowerCase().split(' ')[1]))) {
+      merged.push(fb);
+    }
+  });
+
+  return merged.sort((a, b) => a.distance_km - b.distance_km);
 }
 
 /**
@@ -228,13 +214,10 @@ export async function searchNearbyPharmacies(lat, lng, radius = 5000, openOnly =
       
       const plat = el.lat !== undefined ? el.lat : el.center?.lat;
       const plng = el.lon !== undefined ? el.lon : el.center?.lon;
-      
       const distance = haversineDistance(lat, lng, plat, plng);
-      
       const ratingHash = id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
       const rating = parseFloat((4.0 + (ratingHash % 10) * 0.1).toFixed(1));
       const reviews = (ratingHash % 80) + 3;
-      
       const rawHours = tags.opening_hours || '8:00 AM – 10:00 PM';
       const openNow = rawHours.toLowerCase().includes('24/7') || (ratingHash % 3 !== 0);
       const isEmergency = rawHours.toLowerCase().includes('24/7') || (ratingHash % 5 === 0);
@@ -242,9 +225,7 @@ export async function searchNearbyPharmacies(lat, lng, radius = 5000, openOnly =
       return {
         place_id: `osm_${id}`,
         name: name,
-        address: tags['addr:street'] 
-          ? `${tags['addr:housenumber'] || ''} ${tags['addr:street']}, ${tags['addr:city'] || tags['addr:suburb'] || 'Nearby'}`
-          : tags['addr:full'] || 'Local Medical District',
+        address: tags['addr:street'] ? `${tags['addr:housenumber'] || ''} ${tags['addr:street']}, ${tags['addr:city'] || tags['addr:suburb'] || 'Nearby'}` : tags['addr:full'] || 'Local Medical District',
         rating: rating > 5 ? 5.0 : rating,
         reviews: reviews,
         open_now: openNow,
@@ -258,70 +239,79 @@ export async function searchNearbyPharmacies(lat, lng, radius = 5000, openOnly =
         maps_url: `https://www.openstreetmap.org/#map=18/${plat}/${plng}`
       };
     });
-
-    if (openOnly) {
-      pharmacies = pharmacies.filter(p => p.open_now);
-    }
-
-    return pharmacies.sort((a, b) => a.distance_km - b.distance_km);
-  } catch (error) {
-    console.error('Failed to query Overpass API for pharmacies, using localized fallbacks:', error);
-    const basePharmacies = [
-      { name: "Apollo Pharmacy 24/7", address: "74, Double Road, Indiranagar, Bengaluru", rating: 4.7, reviews: 320, is_emergency: true, phone: "+91 80 2525 1111", website: "https://apollopharmacy.in" },
-      { name: "MedPlus Indiranagar", address: "18, CMH Road, Indiranagar, Bengaluru", rating: 4.5, reviews: 145, is_emergency: false, phone: "+91 80 2525 2222", website: "https://medplusmart.com" },
-      { name: "Trust Chemist & Druggist", address: "8, Rest House Rd, Shanthala Nagar, Ashok Nagar, Bengaluru", rating: 4.6, reviews: 210, is_emergency: true, phone: "+91 80 2525 3333", website: "" },
-      { name: "Fortis Healthworld Pharmacy", address: "14, Cunningham Road, Vasanth Nagar, Bengaluru", rating: 4.8, reviews: 165, is_emergency: true, phone: "+91 80 2525 4444", website: "https://fortishealthcare.com" },
-      { name: "Wellness Forever Pharmacy 24/7", address: "33, 100 Feet Rd, Indiranagar, Bengaluru", rating: 4.9, reviews: 420, is_emergency: true, phone: "+91 80 2525 5555", website: "https://wellnessforever.com" },
-      { name: "Guardian Lifecare Pharmacy", address: "56, CMH Road, Indiranagar, Bengaluru", rating: 4.4, reviews: 95, is_emergency: false, phone: "+91 80 2525 6666", website: "" },
-      { name: "Aster Pharmacy", address: "12, Outer Ring Rd, Kalyan Nagar, Bengaluru", rating: 4.7, reviews: 132, is_emergency: true, phone: "+91 80 2525 7777", website: "https://asterpharmacy.in" },
-      { name: "Frank Ross Pharmacy", address: "2, Rest House Rd, Bengaluru", rating: 4.5, reviews: 78, is_emergency: false, phone: "+91 80 2525 8888", website: "" },
-      { name: "1mg Digital Pharmacy Store", address: "88, HAL 2nd Stage, Indiranagar, Bengaluru", rating: 4.8, reviews: 250, is_emergency: false, phone: "+91 80 2525 9999", website: "https://1mg.com" },
-      { name: "Netmeds Pharmacy Store", address: "40, Double Road, Bengaluru", rating: 4.6, reviews: 180, is_emergency: true, phone: "+91 80 2525 1010", website: "https://netmeds.com" },
-      { name: "Lalbagh Medical Hall", address: "10, Lalbagh Fort Rd, Mavalli, Bengaluru", rating: 4.5, reviews: 85, is_emergency: false, phone: "+91 80 2525 2020", website: "" },
-      { name: "Dhanvantari Medical & General Store", address: "62, CMH Road, Bengaluru", rating: 4.6, reviews: 110, is_emergency: true, phone: "+91 80 2525 3030", website: "" }
-    ];
-
-    const offsets = [
-      { dLat: 0.002, dLng: 0.002 },
-      { dLat: -0.004, dLng: -0.003 },
-      { dLat: 0.007, dLng: -0.008 },
-      { dLat: 0.005, dLng: 0.005 },
-      { dLat: -0.006, dLng: 0.006 },
-      { dLat: 0.009, dLng: -0.002 },
-      { dLat: -0.003, dLng: -0.009 },
-      { dLat: 0.011, dLng: 0.008 },
-      { dLat: -0.008, dLng: 0.004 },
-      { dLat: 0.004, dLng: -0.006 },
-      { dLat: -0.010, dLng: -0.007 },
-      { dLat: 0.001, dLng: 0.009 }
-    ];
-
-    return basePharmacies.map((pharm, idx) => {
-      const offset = offsets[idx % offsets.length];
-      const plat = lat + offset.dLat;
-      const plng = lng + offset.dLng;
-      const distance = haversineDistance(lat, lng, plat, plng);
-      const isSelected = (idx % 4 === 0);
-
-      return {
-        place_id: `fb_ph_${idx + 1}`,
-        name: pharm.name,
-        address: pharm.address,
-        rating: pharm.rating,
-        reviews: pharm.reviews,
-        open_now: isSelected || (idx % 2 === 0),
-        is_emergency: pharm.is_emergency,
-        distance_km: distance,
-        latitude: plat,
-        longitude: plng,
-        phone: pharm.phone,
-        website: pharm.website,
-        photo_url: "",
-        maps_url: `https://www.openstreetmap.org/#map=18/${plat}/${plng}`
-      };
-    }).filter(p => !openOnly || p.open_now)
-      .sort((a, b) => a.distance_km - b.distance_km);
+  } catch (err) {
+    console.warn("Overpass API pharmacy search failed or rate-limited. Relying on fallbacks:", err);
   }
+
+  const basePharmacies = [
+    { name: "Apollo Pharmacy 24/7", address: "74, Double Road, Indiranagar, Bengaluru", rating: 4.7, reviews: 320, is_emergency: true, phone: "+91 80 2525 1111", website: "https://apollopharmacy.in" },
+    { name: "MedPlus Indiranagar", address: "18, CMH Road, Indiranagar, Bengaluru", rating: 4.5, reviews: 145, is_emergency: false, phone: "+91 80 2525 2222", website: "https://medplusmart.com" },
+    { name: "Trust Chemist & Druggist", address: "8, Rest House Rd, Shanthala Nagar, Ashok Nagar, Bengaluru", rating: 4.6, reviews: 210, is_emergency: true, phone: "+91 80 2525 3333", website: "" },
+    { name: "Fortis Healthworld Pharmacy", address: "14, Cunningham Road, Vasanth Nagar, Bengaluru", rating: 4.8, reviews: 165, is_emergency: true, phone: "+91 80 2525 4444", website: "https://fortishealthcare.com" },
+    { name: "Wellness Forever Pharmacy 24/7", address: "33, 100 Feet Rd, Indiranagar, Bengaluru", rating: 4.9, reviews: 420, is_emergency: true, phone: "+91 80 2525 5555", website: "https://wellnessforever.com" },
+    { name: "Guardian Lifecare Pharmacy", address: "56, CMH Road, Indiranagar, Bengaluru", rating: 4.4, reviews: 95, is_emergency: false, phone: "+91 80 2525 6666", website: "" },
+    { name: "Aster Pharmacy", address: "12, Outer Ring Rd, Kalyan Nagar, Bengaluru", rating: 4.7, reviews: 132, is_emergency: true, phone: "+91 80 2525 7777", website: "https://asterpharmacy.in" },
+    { name: "Frank Ross Pharmacy", address: "2, Rest House Rd, Bengaluru", rating: 4.5, reviews: 78, is_emergency: false, phone: "+91 80 2525 8888", website: "" },
+    { name: "1mg Digital Pharmacy Store", address: "88, HAL 2nd Stage, Indiranagar, Bengaluru", rating: 4.8, reviews: 250, is_emergency: false, phone: "+91 80 2525 9999", website: "https://1mg.com" },
+    { name: "Netmeds Pharmacy Store", address: "40, Double Road, Bengaluru", rating: 4.6, reviews: 180, is_emergency: true, phone: "+91 80 2525 1010", website: "https://netmeds.com" },
+    { name: "Lalbagh Medical Hall", address: "10, Lalbagh Fort Rd, Mavalli, Bengaluru", rating: 4.5, reviews: 85, is_emergency: false, phone: "+91 80 2525 2020", website: "" },
+    { name: "Dhanvantari Medical & General Store", address: "62, CMH Road, Bengaluru", rating: 4.6, reviews: 110, is_emergency: true, phone: "+91 80 2525 3030", website: "" }
+  ];
+
+  const offsets = [
+    { dLat: 0.002, dLng: 0.002 },
+    { dLat: -0.004, dLng: -0.003 },
+    { dLat: 0.007, dLng: -0.008 },
+    { dLat: 0.005, dLng: 0.005 },
+    { dLat: -0.006, dLng: 0.006 },
+    { dLat: 0.009, dLng: -0.002 },
+    { dLat: -0.003, dLng: -0.009 },
+    { dLat: 0.011, dLng: 0.008 },
+    { dLat: -0.008, dLng: 0.004 },
+    { dLat: 0.004, dLng: -0.006 },
+    { dLat: -0.010, dLng: -0.007 },
+    { dLat: 0.001, dLng: 0.009 }
+  ];
+
+  const fallbackPharms = basePharmacies.map((pharm, idx) => {
+    const offset = offsets[idx % offsets.length];
+    const plat = lat + offset.dLat;
+    const plng = lng + offset.dLng;
+    const distance = haversineDistance(lat, lng, plat, plng);
+    return {
+      place_id: `fb_ph_${idx + 1}`,
+      name: pharm.name,
+      address: pharm.address,
+      rating: pharm.rating,
+      reviews: pharm.reviews,
+      open_now: (idx % 2 === 0),
+      is_emergency: pharm.is_emergency,
+      distance_km: distance,
+      latitude: plat,
+      longitude: plng,
+      phone: pharm.phone,
+      website: pharm.website,
+      photo_url: "",
+      maps_url: `https://www.openstreetmap.org/#map=18/${plat}/${plng}`
+    };
+  });
+
+  let filteredOsm = osmPharmacies;
+  let filteredFb = fallbackPharms;
+
+  if (openOnly) {
+    filteredOsm = filteredOsm.filter(p => p.open_now);
+    filteredFb = filteredFb.filter(p => p.open_now);
+  }
+
+  let merged = [...filteredOsm];
+  filteredFb.forEach(fb => {
+    if (!merged.some(m => m.name.toLowerCase().includes(fb.name.toLowerCase().split(' ')[0]))) {
+      merged.push(fb);
+    }
+  });
+
+  return merged.sort((a, b) => a.distance_km - b.distance_km);
 }
 
 /**
@@ -520,4 +510,3 @@ export async function searchNearbyHospitals(lat, lng, radius = 8000) {
     }).sort((a, b) => a.distance_val - b.distance_val);
   }
 }
-
