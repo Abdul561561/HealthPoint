@@ -337,10 +337,12 @@ export default function Doctors() {
     setSelectedDoctor(null);
 
     try {
-     const doctors = await searchNearbyDoctors(
-    latitude,
-    longitude
-);
+      const doctors = await searchNearbyDoctors(
+        coords.lat,
+        coords.lng,
+        specialty,
+        radius
+      );
       setDoctors(doctors);
     } catch (e) {
       console.error(e);
