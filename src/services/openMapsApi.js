@@ -56,16 +56,21 @@ function getSpecialtyFromName(name = '', id = '') {
  * Fetch nearby doctors, clinics, and hospitals using Overpass API
  */
 export async function searchNearbyDoctors(lat, lng, specialty = 'All', radius = 5000) {
+  const numLat = parseFloat(lat);
+  const numLng = parseFloat(lng);
+  const centerLat = !isNaN(numLat) ? numLat : 12.9716;
+  const centerLng = !isNaN(numLng) ? numLng : 77.5946;
+
   const overpassUrl = 'https://overpass-api.de/api/interpreter';
   const query = `
     [out:json][timeout:25];
     (
-      node["amenity"="doctors"](around:${radius},${lat},${lng});
-      node["amenity"="clinic"](around:${radius},${lat},${lng});
-      node["amenity"="hospital"](around:${radius},${lat},${lng});
-      way["amenity"="doctors"](around:${radius},${lat},${lng});
-      way["amenity"="clinic"](around:${radius},${lat},${lng});
-      way["amenity"="hospital"](around:${radius},${lat},${lng});
+      node["amenity"="doctors"](around:${radius},${centerLat},${centerLng});
+      node["amenity"="clinic"](around:${radius},${centerLat},${centerLng});
+      node["amenity"="hospital"](around:${radius},${centerLat},${centerLng});
+      way["amenity"="doctors"](around:${radius},${centerLat},${centerLng});
+      way["amenity"="clinic"](around:${radius},${centerLat},${centerLng});
+      way["amenity"="hospital"](around:${radius},${centerLat},${centerLng});
     );
     out center;
   `;
@@ -82,7 +87,7 @@ export async function searchNearbyDoctors(lat, lng, specialty = 'All', radius = 
       const name = tags.name || tags['name:en'] || (tags.amenity === 'hospital' ? 'Community Hospital' : 'Medical Clinic');
       const plat = el.lat !== undefined ? el.lat : el.center?.lat;
       const plng = el.lon !== undefined ? el.lon : el.center?.lon;
-      const distance = haversineDistance(lat, lng, plat, plng);
+      const distance = haversineDistance(centerLat, centerLng, plat, plng);
       const osmSpecialty = tags.speciality || tags['healthcare:speciality'] || getSpecialtyFromName(name, id);
       const ratingHash = id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
       const rating = parseFloat((4.0 + (ratingHash % 10) * 0.1).toFixed(1));
@@ -149,9 +154,9 @@ export async function searchNearbyDoctors(lat, lng, specialty = 'All', radius = 
 
   const fallbackDocs = baseDoctors.map((doc, idx) => {
     const offset = offsets[idx % offsets.length];
-    const plat = lat + offset.dLat;
-    const plng = lng + offset.dLng;
-    const distance = haversineDistance(lat, lng, plat, plng);
+    const plat = centerLat + offset.dLat;
+    const plng = centerLng + offset.dLng;
+    const distance = haversineDistance(centerLat, centerLng, plat, plng);
     return {
       place_id: `fb_doc_${idx + 1}`,
       name: doc.name,
@@ -188,18 +193,24 @@ export async function searchNearbyDoctors(lat, lng, specialty = 'All', radius = 
  * Fetch nearby pharmacies using Overpass API
  */
 export async function searchNearbyPharmacies(lat, lng, radius = 5000, openOnly = false) {
+  const numLat = parseFloat(lat);
+  const numLng = parseFloat(lng);
+  const centerLat = !isNaN(numLat) ? numLat : 12.9716;
+  const centerLng = !isNaN(numLng) ? numLng : 77.5946;
+
   const overpassUrl = 'https://overpass-api.de/api/interpreter';
   
   // Overpass QL query: searches for pharmacies around user coords
   const query = `
     [out:json][timeout:25];
     (
-      node["amenity"="pharmacy"](around:${radius},${lat},${lng});
-      way["amenity"="pharmacy"](around:${radius},${lat},${lng});
+      node["amenity"="pharmacy"](around:${radius},${centerLat},${centerLng});
+      way["amenity"="pharmacy"](around:${radius},${centerLat},${centerLng});
     );
     out center;
   `;
 
+  let osmPharmacies = [];
   try {
     const res = await axios.post(overpassUrl, `data=${encodeURIComponent(query)}`, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
@@ -207,14 +218,14 @@ export async function searchNearbyPharmacies(lat, lng, radius = 5000, openOnly =
 
     const elements = res.data?.elements || [];
     
-    let pharmacies = elements.map(el => {
+    osmPharmacies = elements.map(el => {
       const id = String(el.id);
       const tags = el.tags || {};
       const name = tags.name || tags['name:en'] || 'Local Pharmacy';
       
       const plat = el.lat !== undefined ? el.lat : el.center?.lat;
       const plng = el.lon !== undefined ? el.lon : el.center?.lon;
-      const distance = haversineDistance(lat, lng, plat, plng);
+      const distance = haversineDistance(centerLat, centerLng, plat, plng);
       const ratingHash = id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
       const rating = parseFloat((4.0 + (ratingHash % 10) * 0.1).toFixed(1));
       const reviews = (ratingHash % 80) + 3;
@@ -275,9 +286,9 @@ export async function searchNearbyPharmacies(lat, lng, radius = 5000, openOnly =
 
   const fallbackPharms = basePharmacies.map((pharm, idx) => {
     const offset = offsets[idx % offsets.length];
-    const plat = lat + offset.dLat;
-    const plng = lng + offset.dLng;
-    const distance = haversineDistance(lat, lng, plat, plng);
+    const plat = centerLat + offset.dLat;
+    const plng = centerLng + offset.dLng;
+    const distance = haversineDistance(centerLat, centerLng, plat, plng);
     return {
       place_id: `fb_ph_${idx + 1}`,
       name: pharm.name,
