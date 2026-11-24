@@ -8,14 +8,14 @@ import {
   UserCheck, Shield, CheckCircle2, ArrowRight
 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
-import { registerUser, verifyUserEmail, clearError } from '../redux/slices/authSlice';
+import { registerUser, clearError } from '../redux/slices/authSlice';
 
 export default function Signup() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const dateInputRef = useRef(null);
 
-  const { verificationRequired, unverifiedEmail, error: reduxError } = useSelector(state => state.auth);
+  const { error: reduxError } = useSelector(state => state.auth);
 
   // Form step manager
   const [step, setStep] = useState(1);
@@ -41,8 +41,6 @@ export default function Signup() {
     agree: false
   });
 
-  const [otp, setOtp] = useState('');
-  const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', '']);
   const [showPass, setShowPass] = useState(false);
   const [showConfirmPass, setShowConfirmPass] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -62,11 +60,6 @@ export default function Signup() {
     }
   }, [reduxError]);
 
-  // Sync OTP digits to central OTP string
-  useEffect(() => {
-    setOtp(otpDigits.join(''));
-  }, [otpDigits]);
-
   // Rotate loading texts to keep user engaged during register
   useEffect(() => {
     if (!loading) return;
@@ -75,8 +68,7 @@ export default function Signup() {
       'Initializing health database...',
       'Setting default notification preferences...',
       'Calculating target metabolic metrics...',
-      'Generating email verification code...',
-      'Printing security OTP to backend...'
+      'Finalizing secure session...'
     ];
     let index = 0;
     const interval = setInterval(() => {
@@ -150,50 +142,10 @@ export default function Signup() {
 
     setLoading(false);
     if (registerUser.fulfilled.match(resultAction)) {
-      if (resultAction.payload?.status === 'verification_required') {
-        setError('');
-      } else {
-        setSuccess(true);
-        setTimeout(() => navigate('/dashboard'), 1800);
-      }
+      setSuccess(true);
+      setTimeout(() => navigate('/dashboard'), 1500);
     } else {
       setError(resultAction.payload || 'Registration failed');
-    }
-  };
-
-  const handleVerifySubmit = async (e) => {
-    e.preventDefault();
-    if (otp.length < 6) {
-      setError('Please enter all 6 digits of the verification code.');
-      return;
-    }
-    setError('');
-    setLoading(true);
-    const resultAction = await dispatch(verifyUserEmail({
-      email: unverifiedEmail,
-      otp: otp
-    }));
-    setLoading(false);
-    if (verifyUserEmail.fulfilled.match(resultAction)) {
-      setSuccess(true);
-      setTimeout(() => navigate('/dashboard'), 1800);
-    } else {
-      setError(resultAction.payload || 'Verification code is invalid or has expired.');
-    }
-  };
-
-  const handleOtpPaste = (e) => {
-    e.preventDefault();
-    const pastedText = e.clipboardData.getData('text/plain').slice(0, 6);
-    if (/^\d+$/.test(pastedText)) {
-      const newDigits = [...otpDigits];
-      for (let i = 0; i < pastedText.length; i++) {
-        newDigits[i] = pastedText[i];
-      }
-      setOtpDigits(newDigits);
-      const focusIndex = Math.min(pastedText.length, 5);
-      const el = document.getElementById(`otp-${focusIndex}`);
-      el?.focus();
     }
   };
 
@@ -278,122 +230,20 @@ export default function Signup() {
           )}
         </AnimatePresence>
 
-        {/* ── FLOW 1: Verification Flow (OTP Code Form) ── */}
-        {verificationRequired ? (
-          <div className="space-y-8">
-            <div className="space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
-                <Shield className="w-6 h-6 text-indigo-400" />
-              </div>
-              <div>
-                <h2 className="text-3xl font-black text-white">Verify Your Account</h2>
-                <p className="text-slate-400 mt-2 text-sm leading-relaxed">
-                  We have generated a 6-digit OTP code and printed it in the{' '}
-                  <span className="text-indigo-400 font-bold bg-indigo-500/10 px-2 py-0.5 rounded-md border border-indigo-500/20">
-                    backend terminal console
-                  </span>{' '}
-                  for:
-                </p>
-                <div className="inline-flex items-center gap-2 mt-2 bg-slate-800/80 px-3.5 py-1.5 rounded-xl border border-white/5 text-sm text-slate-200 font-medium">
-                  <Mail className="w-3.5 h-3.5 text-indigo-400" />
-                  {unverifiedEmail}
-                </div>
-              </div>
+        {/* ── Multi-Step Signup Form ── */}
+        <div className="space-y-6">
+          
+          {/* Headers */}
+          <div className="flex items-center justify-between pb-4 border-b border-white/5">
+            <div>
+              <h2 className="text-3xl font-black text-white tracking-tight">Create Account</h2>
+              <p className="text-xs text-slate-400 mt-1 font-medium">Suitable for Indian healthcare users</p>
             </div>
-
-            <form onSubmit={handleVerifySubmit} className="space-y-6">
-              {error && (
-                <motion.div 
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-semibold flex items-start gap-2.5"
-                >
-                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-rose-400" />
-                  <span>{error}</span>
-                </motion.div>
-              )}
-
-              <div className="space-y-3">
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
-                  6-Digit OTP Security Code
-                </label>
-                <div className="flex justify-between gap-2.5" onPaste={handleOtpPaste}>
-                  {otpDigits.map((digit, idx) => (
-                    <input
-                      key={idx}
-                      id={`otp-${idx}`}
-                      type="text"
-                      maxLength={1}
-                      value={digit}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (!/^\d*$/.test(val)) return;
-                        const newDigits = [...otpDigits];
-                        newDigits[idx] = val.slice(-1);
-                        setOtpDigits(newDigits);
-                        if (val && idx < 5) {
-                          const next = document.getElementById(`otp-${idx + 1}`);
-                          next?.focus();
-                        }
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Backspace') {
-                          if (!otpDigits[idx] && idx > 0) {
-                            const newDigits = [...otpDigits];
-                            newDigits[idx - 1] = '';
-                            setOtpDigits(newDigits);
-                            const prev = document.getElementById(`otp-${idx - 1}`);
-                            prev?.focus();
-                          } else {
-                            const newDigits = [...otpDigits];
-                            newDigits[idx] = '';
-                            setOtpDigits(newDigits);
-                          }
-                        }
-                      }}
-                      className="otp-input w-11 h-14 md:w-14 md:h-16 text-center text-xl md:text-2xl font-black text-white bg-slate-950/60 border border-white/10 rounded-xl focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 outline-none transition-all duration-200"
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-3 pt-2">
-                <motion.button
-                  whileTap={{ scale: 0.98 }}
-                  type="submit"
-                  disabled={otp.length < 6}
-                  className={`btn-primary w-full py-4 text-sm font-bold flex items-center justify-center gap-2 rounded-2xl ${
-                    otp.length < 6 ? 'opacity-60 cursor-not-allowed' : 'shadow-glow-primary bg-cyan-600 hover:bg-cyan-700'
-                  }`}
-                >
-                  Verify Registration <ArrowRight className="w-4 h-4" />
-                </motion.button>
-
-                <button
-                  type="button"
-                  onClick={() => window.location.reload()}
-                  className="w-full text-center text-xs text-slate-500 hover:text-slate-350 transition-colors font-medium hover:underline py-2"
-                >
-                  Go Back & Restart Registration
-                </button>
-              </div>
-            </form>
+            <div className="text-right">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-widest block">Step</span>
+              <span className="text-2xl font-black text-cyan-400">{step}<span className="text-sm text-slate-500">/3</span></span>
+            </div>
           </div>
-        ) : (
-          /* ── FLOW 2: Multi-Step Signup Form ── */
-          <div className="space-y-6">
-            
-            {/* Headers */}
-            <div className="flex items-center justify-between pb-4 border-b border-white/5">
-              <div>
-                <h2 className="text-3xl font-black text-white tracking-tight">Create Account</h2>
-                <p className="text-xs text-slate-400 mt-1 font-medium">Suitable for Indian healthcare users</p>
-              </div>
-              <div className="text-right">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-widest block">Step</span>
-                <span className="text-2xl font-black text-cyan-400">{step}<span className="text-sm text-slate-500">/3</span></span>
-              </div>
-            </div>
 
             {/* Stepper Progress Bar */}
             <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
@@ -740,7 +590,7 @@ export default function Signup() {
                   }`}
                 >
                   {step === 3 ? (
-                    <>Verify Email & Sign Up <ShieldCheck className="w-4 h-4" /></>
+                    <>Complete Registration <ShieldCheck className="w-4 h-4" /></>
                   ) : (
                     <>Continue <ChevronRight className="w-4 h-4" /></>
                   )}
@@ -758,7 +608,6 @@ export default function Signup() {
             </p>
 
           </div>
-        )}
 
       </div>
     </div>

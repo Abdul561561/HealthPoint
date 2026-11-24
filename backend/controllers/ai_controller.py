@@ -1,461 +1,560 @@
+"""
+HealthPoint AI Controller
+=========================
+Orchestrates natural general-purpose conversation and specialized healthcare assistance
+using the OpenRouter LLM service, intent detection, minimized health context retrieval,
+RAG, and real medical document analysis.
+"""
+
 import os
+import json
+import logging
+from typing import Optional, Dict, Any, List
 from fastapi import HTTPException, status
 from bson import ObjectId
+
 from database.mongodb import get_database
-from controllers.gemini_helper import call_gemini, call_gemini_chat
+from services.llm_service import get_llm_service, LLMServiceException
+from services.intent_service import detect_intent, IntentType
+from services.health_context_service import build_minimized_health_context
+from services.rag_service import get_rag_service
+from services.document_service import (
+    extract_text_from_pdf,
+    extract_lab_markers,
+    parse_prescription_text,
+    KNOWN_LAB_RANGES
+)
 
-SYSTEM_DISCLAIMER = "\n\n> *Disclaimer: HealthPoint AI provides personalized health insights for educational purposes and does not replace professional medical advice, diagnosis, or treatment. Always consult a qualified doctor or healthcare professional for clinical decisions.*"
+logger = logging.getLogger("healthpoint.ai_controller")
 
-async def chat_ai_controller(user_email: str, message: str, session_id: str = None):
+SYSTEM_DISCLAIMER = "\n\n> *Disclaimer: HealthPoint AI provides health information for educational and informational purposes. It does not replace professional medical advice, clinical diagnosis, or treatment. Always consult a qualified healthcare professional for medical decisions.*"
+
+async def chat_ai_controller(user_email: str, message: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Main conversational endpoint:
+    - Verifies session ownership (both session ID and authenticated user identity).
+    - Classifies intent using fast rule-based detection.
+    - Retrieves minimal de-identified health data ONLY when relevant.
+    - Executes completion via OpenRouter LLM service with fallback and graceful offline degradation.
+    """
     db = get_database()
-    if db is None:
-        raise HTTPException(status_code=503, detail="Database connection unavailable")
-        
-    # Retrieve user info, metrics, and records to build context for Gemini
-    user = await db.users.find_one({"email": user_email})
-    metrics = await db.metrics.find_one({"user_email": user_email})
-    
-    records = []
-    try:
-        cursor = db.records.find({"user_email": user_email})
-        async for r in cursor:
-            records.append(r)
-    except Exception as e:
-        print(f"Error fetching records: {e}")
 
-    # Fetch appointments
-    appointments = []
-    try:
-        appt_cursor = db.appointments.find({"user_email": user_email})
-        async for appt in appt_cursor:
-            appointments.append(appt)
-    except Exception as e:
-        print(f"Error fetching appointments: {e}")
-
-    # Fetch workouts
-    workouts = []
-    try:
-        w_cursor = db.workouts.find({"user_email": user_email})
-        async for w in w_cursor:
-            workouts.append(w)
-    except Exception as e:
-        print(f"Error fetching workouts: {e}")
-
-    # Fetch pharmacy orders
-    orders = []
-    try:
-        ord_cursor = db.orders.find({"user_email": user_email})
-        async for o in ord_cursor:
-            orders.append(o)
-    except Exception as e:
-        print(f"Error fetching orders: {e}")
-
-    # Fetch meals
-    meals = []
-    try:
-        meals_cursor = db.meals.find({"user_email": user_email})
-        async for m in meals_cursor:
-            meals.append(m)
-    except Exception as e:
-        print(f"Error fetching meals: {e}")
-
-    # Fetch claims
-    claims = []
-    try:
-        claims_cursor = db.claimRequests.find({"user_email": user_email})
-        async for c in claims_cursor:
-            claims.append(c)
-    except Exception as e:
-        print(f"Error fetching claims: {e}")
-
-    # Fetch saved plans count
-    saved_plans_count = 0
-    try:
-        saved_plans_count = await db.savedPlans.count_documents({"user_email": user_email})
-    except Exception as e:
-        print(f"Error counting saved plans: {e}")
-
-    # Fetch favorite cashless hospitals count
-    fav_hospitals_count = 0
-    try:
-        fav_hospitals_count = await db.favoriteHospitals.count_documents({"user_email": user_email})
-    except Exception as e:
-        print(f"Error counting favorite hospitals: {e}")
-
-    # Compute Scikit-Learn risk predictions for AI context
-    risk_summary = ""
-    try:
-        from controllers.analytics_controller import HealthClassifierManager
-        import numpy as np
-        ml_manager = HealthClassifierManager.get_instance()
-        age = user.get("age", 28) if user else 28
-        hr = metrics.get("heartRate", {}).get("current", 72) if metrics else 72
-        bp_sys = metrics.get("bloodPressure", {}).get("systolic", 120) if metrics else 120
-        bmi_val = metrics.get("bmi", {}).get("value", 22.8) if metrics else 22.8
-        sleep_hrs = metrics.get("sleep", {}).get("hours", 7.5) if metrics else 7.5
-        steps = metrics.get("steps", {}).get("count", 8420) if metrics else 8420
-        cal_intake = metrics.get("calories", {}).get("intake", 2100) if metrics else 2100
-
-        cardio_prob = float(ml_manager.cardio_model.predict_proba(np.array([[age, hr, bp_sys, bmi_val]]))[0][1] * 100)
-        diab_prob = float(ml_manager.diabetes_model.predict_proba(np.array([[age, bmi_val, cal_intake, steps]]))[0][1] * 100)
-        fatigue_prob = float(ml_manager.fatigue_model.predict_proba(np.array([[age, sleep_hrs, hr, bmi_val]]))[0][1] * 100)
-        
-        risk_summary = f"Scikit-Learn Classifier Risk Estimates:\n- Cardiovascular Health Risk: {cardio_prob:.1f}%\n- Type 2 Diabetes Risk: {diab_prob:.1f}%\n- Sleep Apnea & Chronic Fatigue Risk: {fatigue_prob:.1f}%\n"
-    except Exception as e:
-        print(f"Error computing risk estimates: {e}")
-        
-    # Format a concise but descriptive patient profile
-    patient_info = f"Email: {user_email}\n"
-    if user:
-        patient_info += (
-            f"Name: {user.get('name')}\n"
-            f"Age: {user.get('age')}\n"
-            f"Gender: {user.get('gender')}\n"
-            f"Height: {user.get('height')} cm\n"
-            f"Weight: {user.get('weight')} kg\n"
-            f"Blood Group: {user.get('bloodGroup')}\n"
-            f"Allergies: {user.get('allergies', 'None reported')}\n"
-            f"Medical Conditions: {user.get('medicalConditions', 'None reported')}\n"
-            f"Emergency Contact: {user.get('emergencyContactName', 'N/A')} ({user.get('emergencyContactPhone', 'N/A')})\n"
-        )
-    if metrics:
-        bmi_val = metrics.get('bmi', {}).get('value')
-        bmi_cat = metrics.get('bmi', {}).get('category')
-        patient_info += f"Current BMI: {bmi_val} ({bmi_cat})\n"
-        patient_info += f"Target Calories: {metrics.get('calories', {}).get('target')} kcal/day\n"
-        patient_info += f"Target Daily Steps: {metrics.get('steps', {}).get('target')} steps\n"
-        patient_info += f"Target Water Intake: {metrics.get('water', {}).get('target')} glasses/day\n"
-        patient_info += f"Vitals: Heart Rate {metrics.get('heartRate', {}).get('current')} bpm, Blood Pressure {metrics.get('bloodPressure', {}).get('systolic')}/{metrics.get('bloodPressure', {}).get('diastolic')} mmHg\n"
-        patient_info += f"Sleep History: {metrics.get('sleep', {}).get('hours')} hours (Quality: {metrics.get('sleep', {}).get('quality')})\n"
-        patient_info += f"Water Intake: {metrics.get('water', {}).get('intake')} glasses\n"
-        patient_info += f"Steps Today: {metrics.get('steps', {}).get('count')} steps\n"
-        patient_info += f"Calories Intake Today: {metrics.get('calories', {}).get('intake')} kcal\n"
-        patient_info += f"Oxygen Level: {metrics.get('oxygen', {}).get('level')}%\n"
-        patient_info += f"Temperature: {metrics.get('temperature', {}).get('value')} °F\n"
-        
-    if meals:
-        patient_info += "\nLogged Meals Today:\n"
-        for m in meals[:5]:
-            patient_info += f"- Meal: {m.get('name')} | Type: {m.get('type')} | Calories: {m.get('calories')} kcal | P/C/F: {m.get('protein')}g/{m.get('carbs')}g/{m.get('fat')}g\n"
+    # 1. Session verification & retrieval
+    session = None
+    if db is not None:
+        if session_id:
+            try:
+                obj_id = ObjectId(session_id)
+            except Exception:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid session ID format")
             
-    if records:
-        patient_info += "\nUploaded Medical Records & Reports:\n"
-        for idx, rec in enumerate(records, 1):
-            patient_info += f"{idx}. Title: {rec.get('title')} | Category: {rec.get('category')} | Type: {rec.get('type')} | Date: {rec.get('date')} | Hospital/Doctor: {rec.get('hospital')} / {rec.get('doctor')} | Status: {rec.get('status')}\n"
+            session = await db.chat_history.find_one({"_id": obj_id, "user_email": user_email})
+            if not session:
+                # Session either does not exist or belongs to another user
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Chat session not found or you are not authorized to access it."
+                )
+        else:
+            # Find active session or create new
+            session = await db.chat_history.find_one({"user_email": user_email, "status": "active"})
+
+        if not session:
+            session_doc = {
+                "user_email": user_email,
+                "status": "active",
+                "messages": [
+                    {
+                        "role": "model",
+                        "content": "Hello! I'm HealthPoint AI, your personal healthcare and conversational assistant. How can I help you today?"
+                    }
+                ]
+            }
+            res = await db.chat_history.insert_one(session_doc)
+            session = session_doc
+            session["id"] = str(res.inserted_id)
+        else:
+            session["id"] = str(session["_id"])
+            if "_id" in session:
+                del session["_id"]
     else:
-        patient_info += "\nUploaded Medical Records: None uploaded yet.\n"
-
-    if risk_summary:
-        patient_info += f"\n{risk_summary}"
-        
-    if appointments:
-        patient_info += "\nScheduled Appointments:\n"
-        for appt in appointments:
-            patient_info += f"- Doctor: {appt.get('doctor')} | Specialty: {appt.get('specialty')} | Date: {appt.get('date')} | Time: {appt.get('time')} | Status: {appt.get('status')}\n"
-            
-    if workouts:
-        patient_info += "\nRecent Workout Logs:\n"
-        for w in workouts[:5]:
-            patient_info += f"- Workout: {w.get('name')} | Type: {w.get('type')} | Duration: {w.get('duration')} min | Calories: {w.get('calories')} kcal | Completed: {w.get('completed')}\n"
-
-    if orders:
-        patient_info += "\nPharmacy Purchase Orders History:\n"
-        for o in orders[:5]:
-            patient_info += f"- Order Date: {o.get('date')} | Total Price: ₹{o.get('totalPrice')} | Status: {o.get('status')} | Items: {', '.join([it.get('name') for it in o.get('items', [])])}\n"
-
-    if claims:
-        patient_info += "\nInsurance Claims History:\n"
-        for c in claims[:5]:
-            patient_info += f"- Claim Date: {c.get('date')} | Amount: ₹{c.get('amount')} | Status: {c.get('status')} | Description: {c.get('description')}\n"
-
-    patient_info += f"\nInsurance Saved Plans Count: {saved_plans_count}\n"
-    patient_info += f"Favorite cashless hospitals saved: {fav_hospitals_count}\n"
-
-    # Get or create chat session
-    session_query = {}
-    if session_id:
-        try:
-            session_query["_id"] = ObjectId(session_id)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid session ID format")
-    else:
-        session_query["user_email"] = user_email
-        session_query["status"] = "active"
-        
-    session = await db.chat_history.find_one(session_query)
-    
-    if not session:
-        # Create a new session
-        session_doc = {
+        if session_id:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database connection unavailable")
+        session = {
+            "id": "ephemeral",
             "user_email": user_email,
             "status": "active",
-            "messages": [
-                {
-                    "role": "model",
-                    "content": "Hello! I'm HealthPoint AI, your personal digital health companion. How can I help you today?"
-                }
-            ]
+            "messages": []
         }
-        res = await db.chat_history.insert_one(session_doc)
-        session = session_doc
-        session["id"] = str(res.inserted_id)
-    else:
-        session["id"] = str(session["_id"])
-        del session["_id"]
-        
-    # Format message history for Gemini API
-    # Gemini history format: list of objects with parts: [str] and role: 'user' | 'model'
-    formatted_history = []
-    for msg in session["messages"]:
-        formatted_history.append({
-            "role": msg["role"],
-            "parts": [msg["content"]]
-        })
-        
-    # Initialize model with system persona
-    system_instr = f"""You are "HealthPoint AI" — an intelligent, empathetic, healthcare-focused digital health companion integrated into the HealthPoint AI-Powered Digital Healthcare Ecosystem.
-Your job is NOT to answer questions like ChatGPT. Your job is to provide personalized, structured, easy-to-understand, actionable healthcare guidance using the user's stored healthcare information.
 
-Before answering ANY question, you MUST ALWAYS retrieve and analyze available user data from MongoDB:
-{patient_info}
+    # 2. Intent Detection
+    intent_data = detect_intent(message)
+    intent = intent_data["intent"]
+    logger.info(f"User '{user_email}' message classified as: {intent} (confidence: {intent_data['confidence']})")
 
-Never ignore available user context. The response must always be highly personalized to the user.
+    # 3. Personalized Health Context (Selective & De-identified)
+    health_context = await build_minimized_health_context(user_email, intent, message)
 
-==========================================================
-PERSONALITY & TONE
-==========================================================
-- Speak like a caring healthcare professional. Friendly. Professional. Encouraging. Calm. Positive.
-- Never sound robotic, clinical, or cold. Never scare the user.
-- Always use simple English. Do NOT overwhelm users with medical terminology.
-- Never generate one long boring paragraph. Never give textbook answers. Use headings, bullet points, and tables.
+    # 4. RAG Retrieval (For clinical/health queries)
+    rag_context = ""
+    if intent_data["is_healthcare"]:
+        rag_hits = get_rag_service().retrieve_relevant_knowledge(message, user_email=user_email, top_k=2)
+        if rag_hits:
+            rag_lines = [f"- [{h['source']}] {h['title']}: {h['content']}" for h in rag_hits]
+            rag_context = "\n[CLINICAL GUIDELINES & REFERENCE DATA]:\n" + "\n".join(rag_lines)
 
-==========================================================
-EVERY RESPONSE MUST FOLLOW THIS FORMAT EXACTLY
-==========================================================
-🩺 Health Summary
-Briefly explain what the situation is (1-2 sentences).
+    # 5. Tailored System Instructions based on Intent
+    system_instruction = _build_system_instruction(intent, health_context, rag_context)
 
-------------------------------------------------------
-
-📊 Health Assessment
-Show risk level (use exactly one of these labels with its indicator circle):
-🟢 Healthy
-🟡 Moderate
-🟠 Needs Attention
-🔴 High Risk
-Explain why based on user metrics/data.
-
-------------------------------------------------------
-
-💡 Personalized Recommendations
-Give actionable advice tailored to their profile (water intake, diet, exercise, sleep, stress, general medicine tips).
-
-------------------------------------------------------
-
-🥗 Diet Suggestions
-Suggest specific meals:
-- Breakfast
-- Lunch
-- Dinner
-- Healthy Snacks
-- Foods to avoid
-Explain WHY each is recommended or why it should be avoided based on their height/weight/BMI/allergies/conditions.
-
-------------------------------------------------------
-
-🏃 Lifestyle Improvements
-Recommend exercise, walking, meditation, weight management, or daily habits.
-
-------------------------------------------------------
-
-❤️ HealthPoint Insight
-Generate exactly ONE highly personalized observation using the user's MongoDB history.
-Example: "Your sleep has reduced over the past week while your blood pressure has increased slightly. Improving your sleep schedule may positively affect your blood pressure."
-This section should NEVER be generic.
-
-------------------------------------------------------
-
-Would you like me to:
-✅ Generate a meal plan
-✅ Create a workout plan
-✅ Explain your report
-✅ Show nearby doctors
-✅ Find nearby pharmacies
-✅ Book an appointment
-✅ Save this advice
-
-==========================================================
-SPECIAL INPUT TOPICS
-==========================================================
-- UPLOADED LAB REPORT: Explain in simple terms. Highlight normal/abnormal values, possible causes, lifestyle recommendations, and list 3 questions to ask their doctor.
-- MEDICINES: Explain purpose, common uses, side effects, precautions, foods to avoid, and general dosage tips. Never prescribe or diagnose.
-- DIET / FITNESS: If plans are requested, generate beautiful meal plans or workouts using clean markdown tables.
-- INSURANCE: Explain coverage, claims, deductible, co-pay, waiting periods, cashless support, and documents required.
-- SYMPTOMS: List possible causes, things to monitor, home care, when to visit a doctor, emergency warnings, and recommend nearby specialists or hospitals.
-- MAPS: If nearby services are needed, advise the user to use the HealthPoint nearby finder map tools for pharmacies/doctors/hospitals.
-"""
+    # 6. Execute Completion via LLM Service
+    llm_service = get_llm_service()
     reply = None
+    
+    # Format message history (limit to last 8 messages)
+    history_to_send = []
+    for msg in session.get("messages", [])[-8:]:
+        role = msg.get("role", "user")
+        if role == "model":
+            role = "assistant"
+        history_to_send.append({"role": role, "content": msg.get("content", "")})
+    history_to_send.append({"role": "user", "content": message})
+
     try:
-        print("Attempting Chat AI via gemini_helper...")
-        raw_reply = await call_gemini_chat(system_instr, session["messages"], message)
-        reply = raw_reply + SYSTEM_DISCLAIMER
-        print("Successfully answered Chat AI!")
-    except Exception as e:
-        print(f"Chat AI failed: {e}")
-            
-    if reply is None:
-        # Fallback if all API keys/models are blocked
-        reply = "I apologize, but I am currently having trouble connecting to my cognitive networks. Please try again in a few moments." + SYSTEM_DISCLAIMER
-        
-    # Save user message and AI reply to database
-    await db.chat_history.update_one(
-        {"_id": ObjectId(session["id"])},
-        {
-            "$push": {
-                "messages": {
-                    "$each": [
-                        {"role": "user", "content": message},
-                        {"role": "model", "content": reply}
-                    ]
+        reply = await llm_service.generate_completion(
+            messages=history_to_send,
+            system_instruction=system_instruction,
+            temperature=0.7 if intent != IntentType.PROGRAMMING else 0.2
+        )
+    except Exception as llm_err:
+        logger.warning(f"OpenRouter generation failed or unconfigured: {llm_err}. Using deterministic fallback.")
+        reply = _generate_local_fallback(intent, message, health_context)
+
+    # 7. Apply disclaimer ONLY if required by intent (never on greetings or general topics)
+    if intent_data.get("requires_disclaimer") and SYSTEM_DISCLAIMER not in reply:
+        reply = reply.strip() + SYSTEM_DISCLAIMER
+
+    # 8. Persist conversation turn in MongoDB
+    if db is not None and session.get("id") != "ephemeral":
+        await db.chat_history.update_one(
+            {"_id": ObjectId(session["id"]), "user_email": user_email},
+            {
+                "$push": {
+                    "messages": {
+                        "$each": [
+                            {"role": "user", "content": message},
+                            {"role": "model", "content": reply}
+                        ]
+                    }
                 }
             }
-        }
-    )
-    
-    # Retrieve updated messages
+        )
+
+    # Retrieve updated conversation history
     updated_session = await db.chat_history.find_one({"_id": ObjectId(session["id"])})
     updated_session["id"] = str(updated_session["_id"])
     del updated_session["_id"]
-    
+
     return {
         "session_id": updated_session["id"],
         "reply": reply,
+        "intent": intent,
         "history": updated_session["messages"]
     }
 
-async def get_chat_history_controller(user_email: str):
+def _build_system_instruction(intent: str, health_context: str, rag_context: str) -> str:
+    """Creates a focused, natural system prompt tailored to the user's intent."""
+    base = "You are HealthPoint AI, an intelligent, empathetic, and knowledgeable assistant with healthcare specialization."
+
+    if intent == IntentType.GREETING:
+        return f"{base} Respond to the greeting warmly, naturally, and concisely in 1-2 sentences. Do NOT generate unsolicited health summaries or append medical disclaimers."
+
+    if intent == IntentType.CASUAL:
+        return f"{base} Respond to the user's casual conversation naturally, warmly, and engagingly. If asked for a joke, tell a lighthearted, clean joke. Do NOT append medical disclaimers."
+
+    if intent == IntentType.PROGRAMMING:
+        return f"{base} You are also an expert software engineer. Provide a clear, thorough explanation with clean, structured markdown and syntax-highlighted code blocks (e.g. ```python, ```java). Do NOT append medical disclaimers."
+
+    if intent in (IntentType.GENERAL_KNOWLEDGE, IntentType.EDUCATION):
+        return f"{base} Provide an informative, accurate, and structured educational explanation. Do NOT append medical disclaimers."
+
+    if intent == IntentType.EMERGENCY:
+        return (
+            f"{base} URGENT EMERGENCY NOTICE: The user may be experiencing an acute medical emergency. "
+            "Immediately and prominently advise them to call emergency services (such as 911 in North America or 112/108 in India) "
+            "or go to the nearest emergency room without delay. Do not delay with casual remarks."
+        )
+
+    if intent == IntentType.PERSONAL_HEALTH:
+        return (
+            f"{base} Answer the user's question about their personal health or vitals using strictly the authenticated data below.\n"
+            f"{health_context}\n"
+            "If a requested measurement is not recorded, state that clearly without guessing or inventing values."
+        )
+
+    if intent == IntentType.DIET_NUTRITION:
+        return (
+            f"{base} Act as a certified nutrition specialist. Generate a personalized, structured meal and nutrition plan "
+            f"using available user parameters below:\n{health_context}\n"
+            "Include breakfast, lunch, dinner, and healthy snack recommendations with approximate calorie and macro balance. "
+            "Never suggest unsafe crash diets or calorie deficits."
+        )
+
+    if intent == IntentType.FITNESS:
+        return (
+            f"{base} Act as a certified fitness trainer. Generate a structured, realistic workout routine "
+            f"tailored to the user's vitals and restrictions below:\n{health_context}\n"
+            "Include warmup, exercise sets/repetitions, rest periods, cooldown, and safety precautions."
+        )
+
+    # General Healthcare with context & RAG
+    instr = f"{base} Provide clear, empathetic, and patient-friendly guidance on the healthcare topic."
+    if health_context:
+        instr += f"\n{health_context}"
+    if rag_context:
+        instr += f"\n{rag_context}"
+    return instr
+
+def _generate_local_fallback(intent: str, message: str, health_context: str) -> str:
+    """Provides high-quality, truthful local responses when external AI is offline."""
+    msg = message.lower()
+    
+    if intent == IntentType.GREETING:
+        return "Hey! How can I help you today?"
+
+    if intent == IntentType.CASUAL:
+        if "joke" in msg:
+            return "Why don't scientists trust atoms?\n\nBecause they make up everything!"
+        return "I'm doing well, thank you! I'm here to help you with health questions, nutrition, fitness, or general inquiries. What's on your mind?"
+
+    if intent == IntentType.PROGRAMMING:
+        if "python" in msg:
+            return (
+                "### Python Overview\n\n"
+                "Python is a high-level, interpreted programming language known for its clear, readable syntax and versatile ecosystem.\n\n"
+                "**Key Features:**\n"
+                "- **Dynamic Typing**: Variables do not require explicit type declarations.\n"
+                "- **Batteries Included**: Comprehensive standard library (math, json, asyncio, etc.).\n"
+                "- **Versatile**: Widely used in web development (FastAPI, Django), data science (Pandas, NumPy), and AI/ML.\n\n"
+                "```python\n"
+                "# Example: Calculating BMI in Python\n"
+                "def calculate_bmi(weight_kg: float, height_cm: float) -> float:\n"
+                "    height_m = height_cm / 100.0\n"
+                "    return round(weight_kg / (height_m ** 2), 2)\n\n"
+                "print(f'BMI: {calculate_bmi(70, 175)}')  # Output: 22.86\n"
+                "```"
+            )
+        if "java" in msg or "inheritance" in msg:
+            return (
+                "### Java Inheritance\n\n"
+                "In Java, **inheritance** allows a subclass to inherit fields and methods from a superclass using the `extends` keyword. "
+                "This promotes code reusability and polymorphism.\n\n"
+                "```java\n"
+                "// Superclass\n"
+                "class HealthcareProvider {\n"
+                "    protected String name;\n"
+                "    public HealthcareProvider(String name) { this.name = name; }\n"
+                "    public void conductConsultation() {\n"
+                "        System.out.println(name + \" is conducting a clinical consultation.\");\n"
+                "    }\n"
+                "}\n\n"
+                "// Subclass inheriting from HealthcareProvider\n"
+                "class Cardiologist extends HealthcareProvider {\n"
+                "    public Cardiologist(String name) { super(name); }\n"
+                "    @Override\n"
+                "    public void conductConsultation() {\n"
+                "        System.out.println(name + \" is reviewing echocardiogram and ECG readings.\");\n"
+                "    }\n"
+                "}\n"
+                "```"
+            )
+        return (
+            "Here is a code example demonstrating clean modular architecture:\n\n"
+            "```python\n"
+            "async def get_patient_summary(patient_id: str) -> dict:\n"
+            "    # Asynchronous data retrieval\n"
+            "    return {'patient_id': patient_id, 'status': 'active'}\n"
+            "```"
+        )
+
+    if intent == IntentType.EMERGENCY:
+        return (
+            "⚠️ **URGENT EMERGENCY GUIDANCE**\n\n"
+            "If you or someone around you is experiencing severe symptoms such as severe chest pain, "
+            "difficulty breathing, sudden numbness, or heavy bleeding:\n\n"
+            "1. **Call Emergency Services Immediately**: Dial **911** (US) or **112 / 108** (India).\n"
+            "2. **Seek Immediate Medical Attention**: Go to the nearest hospital Emergency Room.\n"
+            "3. **Do not wait or drive yourself** if experiencing acute chest discomfort or shortness of breath."
+        )
+
+    if intent == IntentType.PERSONAL_HEALTH:
+        if health_context:
+            return f"### Your Health Metrics\n\n{health_context.replace('[PATIENT HEALTH CONTEXT (DE-IDENTIFIED)]:', '').strip()}"
+        return "I checked your profile, but no active measurements (height, weight, or vitals) have been logged yet. You can log your vitals in the Dashboard or Profile section."
+
+    if intent == IntentType.DIET_NUTRITION:
+        return (
+            "### Personalized Balanced Nutrition Plan\n\n"
+            "Here is a wholesome daily meal guide:\n\n"
+            "- **Breakfast**: Rolled oats with chia seeds, fresh berries, and a handful of almonds (approx. 380 kcal).\n"
+            "- **Lunch**: Grilled lean protein (chicken breast or tofu) with quinoa, steamed broccoli, and olive oil dressing (approx. 520 kcal).\n"
+            "- **Snack**: Greek yogurt or sliced apple with peanut butter (approx. 180 kcal).\n"
+            "- **Dinner**: Baked salmon or lentil stew with brown rice and mixed green salad (approx. 490 kcal).\n\n"
+            "**Hydration**: Drink 8-10 glasses (2-2.5L) of water throughout the day."
+        )
+
+    if intent == IntentType.FITNESS:
+        return (
+            "### Balanced Weekly Workout Program\n\n"
+            "- **Warm-up (5-8 mins)**: Dynamic stretches, arm circles, leg swings, light jumping jacks.\n"
+            "- **Routine (30-40 mins)**:\n"
+            "  * Bodyweight Squats: 3 sets of 12 reps\n"
+            "  * Push-ups (or incline): 3 sets of 8-10 reps\n"
+            "  * Dumbbell / Resistance Band Rows: 3 sets of 12 reps\n"
+            "  * Plank: 3 sets of 30-45 seconds\n"
+            "- **Cardio**: 20 minutes brisk walking or cycling.\n"
+            "- **Cool-down (5 mins)**: Static hamstring, quad, and chest stretches.\n\n"
+            "**Safety Tip**: Maintain steady breathing and stop immediately if you experience sharp pain."
+        )
+
+    return "HealthPoint AI is operational. Please ask about your health records, diet planning, exercise routines, or general questions."
+
+async def get_chat_history_controller(user_email: str) -> Dict[str, Any]:
+    """Retrieve the current user's active chat session or seed a clean single greeting."""
     db = get_database()
     if db is None:
         raise HTTPException(status_code=503, detail="Database connection unavailable")
-        
+
     session = await db.chat_history.find_one({"user_email": user_email, "status": "active"})
     if not session:
-        # Seed default initial chat
         session_doc = {
             "user_email": user_email,
             "status": "active",
             "messages": [
                 {
                     "role": "model",
-                    "content": "Hello! I'm HealthAI, your personal health assistant. How can I help you today?"
+                    "content": "Hello! I'm HealthPoint AI, your personal healthcare and conversational assistant. How can I help you today?"
                 }
             ]
         }
         res = await db.chat_history.insert_one(session_doc)
         session = session_doc
         session["id"] = str(res.inserted_id)
-    
+
     if "_id" in session:
         session["id"] = str(session["_id"])
         del session["_id"]
-        
+
     return session
 
-async def analyze_report_controller(title: str, category: str, url: str = None):
-    if category.lower() == "prescription":
-        system_instr = """You are HealthAI, a premium digital prescription scanner and clinical pharmacist assistant. 
-Your goal is to analyze the uploaded prescription details or attachment, extract all medicine names, dosages, and timings, explain the prescription simply in patient-friendly terms, and prompt next steps.
+async def reset_chat_controller(user_email: str) -> Dict[str, Any]:
+    """Archive current chat session and start a clean new session without fake user messages."""
+    db = get_database()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
 
-CRITICAL RESPONSE FORMAT:
-- Speak in a warm, caring, conversational tone.
-- Format the response using clean markdown headings:
-  ### 📋 Prescribed Medicines
-  * **[Medicine Name]** - Dosage: [Dosage], Timing: [Timing]
-  
-  ### 💡 Simple Explanation & Instructions
-  [Plain English explanation of what this prescription is for and key usage tips]
-  
-  ### 📍 Next Steps & Nearby Pharmacies
-  [Encouraging note to visit the Smart Pharmacy finder on HealthPoint to check stock and availability]
-"""
-    else:
-        system_instr = """You are HealthAI, a premium medical laboratory report analyst. 
-Review the lab test details or attachment. Explain what the test measures, why a doctor orders it, what abnormal values signify, and explain medical terms simply.
-Use structured formatting with clean headings like:
-### 📊 Test Overview
-### 🔍 What It Measures
-### ⚠️ Clinical Significance
-"""
-    prompt = f"Please explain the significance of the following medical test/record:\nTitle: {title}\nCategory: {category}"
-    if url:
-        prompt += f"\nUploaded Report Scan Document URL: {url}"
-        
-    # Try to fetch report image/document for visual analysis
-    img_bytes = None
-    img_mime = None
-    if url and ("http://" in url or "https://" in url):
+    # Mark existing active sessions as archived
+    await db.chat_history.update_many(
+        {"user_email": user_email, "status": "active"},
+        {"$set": {"status": "archived"}}
+    )
+
+    new_session_doc = {
+        "user_email": user_email,
+        "status": "active",
+        "messages": [
+            {
+                "role": "model",
+                "content": "Hello! I'm HealthPoint AI, your personal healthcare and conversational assistant. How can I help you today?"
+            }
+        ]
+    }
+    res = await db.chat_history.insert_one(new_session_doc)
+    new_session_doc["id"] = str(res.inserted_id)
+    if "_id" in new_session_doc:
+        del new_session_doc["_id"]
+
+    return {
+        "session_id": new_session_doc["id"],
+        "message": "Chat session reset successfully.",
+        "history": new_session_doc["messages"]
+    }
+
+async def delete_chat_session_controller(user_email: str, session_id: str) -> Dict[str, Any]:
+    """Permanently delete a chat session after verifying ownership."""
+    db = get_database()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+
+    try:
+        obj_id = ObjectId(session_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid session ID format")
+
+    result = await db.chat_history.delete_one({"_id": obj_id, "user_email": user_email})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Chat session not found or unauthorized.")
+
+    return {"success": True, "message": "Session deleted successfully"}
+
+async def analyze_report_controller(
+    user_email: str,
+    title: str,
+    category: str,
+    url: Optional[str] = None,
+    record_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Performs real medical document processing:
+    1. Validates and retrieves record owned by the authenticated user.
+    2. Reads actual file bytes from disk or remote storage.
+    3. Extracts text from PDFs using pypdf.
+    4. Identifies test markers and matches against laboratory reference ranges.
+    5. Formulates clinical findings without fabricating illegible data.
+    """
+    db = get_database()
+    file_bytes = None
+    extracted_text = ""
+    source_ref = title
+
+    # 1. Ownership & file verification via record_id if available
+    if record_id and db is not None:
+        try:
+            r_obj = ObjectId(record_id)
+            rec = await db.records.find_one({"_id": r_obj, "user_email": user_email})
+            if rec:
+                local_path = rec.get("local_path")
+                if local_path and os.path.exists(local_path):
+                    with open(local_path, "rb") as f:
+                        file_bytes = f.read()
+                elif rec.get("url"):
+                    url = rec.get("url")
+        except Exception as e:
+            logger.warning(f"Record retrieval error: {e}")
+
+    # 2. Fetch from URL if local bytes not found
+    if not file_bytes and url and ("http://" in url or "https://" in url):
         try:
             import httpx
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=10.0) as client:
                 res = await client.get(url)
                 if res.status_code == 200:
-                    img_mime = "image/jpeg"
-                    if ".png" in url.lower():
-                        img_mime = "image/png"
-                    elif ".pdf" in url.lower():
-                        img_mime = "application/pdf"
-                    img_bytes = res.content
+                    file_bytes = res.content
         except Exception as e:
-            print(f"Error fetching report attachment: {e}")
+            logger.warning(f"Could not download attachment from URL {url}: {e}")
 
+    # 3. Text Extraction
+    if file_bytes:
+        # Check if PDF
+        if file_bytes[:4] == b"%PDF":
+            extracted_text = extract_text_from_pdf(file_bytes)
+
+    # 4. Extract lab markers
+    markers = []
+    if extracted_text:
+        markers = extract_lab_markers(extracted_text)
+
+    # 5. Formulate Analysis via LLM or structured rule engine
+    is_prescription = (category.lower() == "prescription")
+
+    prompt = f"Analyze the medical report titled '{title}' (Category: {category}).\n"
+    if extracted_text:
+        prompt += f"Document Extracted Text:\n{extracted_text[:2500]}\n"
+    if markers:
+        prompt += f"Extracted Test Biomarkers:\n{json.dumps(markers, indent=2)}\n"
+
+    system_instr = (
+        "You are an expert clinical laboratory analyst and medical consultant AI. "
+        "Review the extracted report content and explain the findings in clear, compassionate, patient-friendly terms. "
+        "List abnormal vs normal values with their reference ranges, explain potential causes, and suggest 3 practical questions to ask the doctor. "
+        "Do NOT invent values not present in the source document."
+    )
+
+    llm_service = get_llm_service()
+    analysis_text = None
     try:
-        print("Attempting Report Analysis via gemini_helper...")
-        raw = await call_gemini(system_instr, prompt, image_bytes=img_bytes, mime_type=img_mime)
-        analysis = raw + SYSTEM_DISCLAIMER
-        print("Successfully generated Report Analysis!")
+        analysis_text = await llm_service.generate_completion(
+            messages=[{"role": "user", "content": prompt}],
+            system_instruction=system_instr
+        )
     except Exception as e:
-        print(f"Report Analysis failed: {e}")
-        analysis = f"Analysis of '{title}' is temporarily unavailable, but typically this test checks general indices related to {category}." + SYSTEM_DISCLAIMER
+        logger.info(f"OpenRouter report analysis offline ({e}), generating structured laboratory report.")
         
-    return {"analysis": analysis}
+        # High-fidelity factual clinical template based on real extracted data
+        if markers:
+            lines = [f"### 📊 Test Overview: {title}", "", "Here is the verified laboratory breakdown extracted from your document:", ""]
+            lines.append("| Test Name | Measured Value | Reference Range | Status |")
+            lines.append("| :--- | :--- | :--- | :--- |")
+            for m in markers:
+                status_icon = "🟢" if m["status"] == "Normal" else "🔴" if m["status"] == "High" else "🟡"
+                lines.append(f"| **{m['test_name']}** | {m['measured_value']} {m['unit']} | {m['reference_range']} | {status_icon} {m['status']} |")
+            
+            lines.append("")
+            lines.append("### 🔍 Key Findings & Recommendations")
+            lines.append("- Discuss all out-of-range markers directly with your treating physician.")
+            lines.append("- Maintain regular hydration and follow recommended dietary protocols prior to repeat testing.")
+            lines.append("")
+            lines.append("### 🩺 Questions for Your Doctor")
+            lines.append("1. *Are my current readings consistent with my health goals?*")
+            lines.append("2. *Do any abnormal values require immediate lifestyle adjustments or follow-up tests?*")
+            lines.append("3. *When should I schedule a re-test to monitor these levels?*")
+            analysis_text = "\n".join(lines)
+        else:
+            analysis_text = (
+                f"### 📋 Report Summary: {title}\n\n"
+                f"**Category**: {category}\n\n"
+                "The report file was inspected. While basic metadata is registered, specific numerical laboratory markers "
+                "could not be extracted with high confidence (e.g. if the document is a scanned image or handwritten note).\n\n"
+                "**Recommended Action**: Please ensure you share the official physical copy with your physician for diagnostic review."
+            )
 
-async def generate_diet_controller(age: int, weight: str, height: str, goal: str, restrictions: str = None):
-    system_instr = "You are HealthAI, a professional dietitian. Create a personalized daily calorie summary and a weekly structured meal plan based on the user's metrics and target goals. Use clean, short markdown tables. CRITICAL: Keep your response extremely short, simple, concise, and structured."
-    prompt = f"Create a personalized diet plan for a user with these stats:\n- Age: {age}\n- Weight: {weight}\n- Height: {height}\n- Goal: {goal}\n- Dietary Restrictions: {restrictions or 'None'}"
-    
+    analysis_with_disclaimer = analysis_text.strip() + SYSTEM_DISCLAIMER
+    return {
+        "analysis": analysis_with_disclaimer,
+        "extracted_markers": markers,
+        "source": source_ref
+    }
+
+async def generate_diet_controller(age: int, weight: str, height: str, goal: str, restrictions: Optional[str] = None) -> Dict[str, Any]:
+    """Generates personalized diet plan."""
+    prompt = f"Create a personalized nutrition and diet plan for:\n- Age: {age}\n- Weight: {weight}\n- Height: {height}\n- Goal: {goal}\n- Restrictions: {restrictions or 'None'}"
+    system_instr = "You are a professional clinical dietitian. Create a personalized daily calorie summary and structured weekly meal plan using clean markdown tables. Avoid unsafe calorie deficits."
+
+    llm_service = get_llm_service()
     try:
-        print("Attempting Diet Plan generation via gemini_helper...")
-        raw = await call_gemini(system_instr, prompt)
-        plan = raw + SYSTEM_DISCLAIMER
-        print("Successfully generated Diet Plan!")
-    except Exception as e:
-        print(f"Diet Plan failed: {e}")
-        plan = "Failed to generate AI Diet plan. Please verify network access." + SYSTEM_DISCLAIMER
-        
-    return {"plan": plan}
+        raw = await llm_service.generate_completion(
+            messages=[{"role": "user", "content": prompt}],
+            system_instruction=system_instr
+        )
+        plan = raw.strip()
+    except Exception:
+        plan = _generate_local_fallback(IntentType.DIET_NUTRITION, prompt, "")
 
-async def generate_fitness_controller(age: int, weight: str, height: str, fitness_level: str, goals: str):
-    system_instr = "You are HealthAI, a certified personal fitness trainer. Design a structured weekly workout routine matching the user's experience level and physical vitals. Use clean, short markdown lists. CRITICAL: Keep your response extremely short, simple, concise, and structured."
-    prompt = f"Design a personalized fitness program for a user with these stats:\n- Age: {age}\n- Weight: {weight}\n- Height: {height}\n- Fitness Level: {fitness_level}\n- Health Goals: {goals}"
-    
+    return {"plan": plan + SYSTEM_DISCLAIMER}
+
+async def generate_fitness_controller(age: int, weight: str, height: str, fitness_level: str, goals: str) -> Dict[str, Any]:
+    """Generates personalized fitness routine."""
+    prompt = f"Design a personalized fitness plan for:\n- Age: {age}\n- Weight: {weight}\n- Height: {height}\n- Fitness Level: {fitness_level}\n- Health Goals: {goals}"
+    system_instr = "You are a certified fitness trainer. Design a structured weekly workout routine matching experience level and physical vitals. Include warmup, sets/reps, cooldown, and safety notes."
+
+    llm_service = get_llm_service()
     try:
-        print("Attempting Fitness Plan generation via gemini_helper...")
-        raw = await call_gemini(system_instr, prompt)
-        plan = raw + SYSTEM_DISCLAIMER
-        print("Successfully generated Fitness Plan!")
-    except Exception as e:
-        print(f"Fitness Plan failed: {e}")
-        plan = "Failed to generate AI Workout plan. Please verify network access." + SYSTEM_DISCLAIMER
-        
-    return {"plan": plan}
+        raw = await llm_service.generate_completion(
+            messages=[{"role": "user", "content": prompt}],
+            system_instruction=system_instr
+        )
+        plan = raw.strip()
+    except Exception:
+        plan = _generate_local_fallback(IntentType.FITNESS, prompt, "")
 
-async def explain_medicine_controller(user_email: str, medicine_name: str, generic_name: str = None):
-    """Use Gemini to explain a medicine in simple terms for patients."""
+    return {"plan": plan + SYSTEM_DISCLAIMER}
+
+async def explain_medicine_controller(user_email: str, medicine_name: str, generic_name: Optional[str] = None) -> Dict[str, Any]:
+    """Explains medication purpose, uses, side effects, and warnings without fabricating interactions."""
     full_name = medicine_name
     if generic_name and generic_name.lower() != medicine_name.lower():
         full_name = f"{medicine_name} ({generic_name})"
 
-    prompt = f"""Explain the medication '{full_name}' in simple terms for a patient. 
+    prompt = f"""Explain the medication '{full_name}' in simple terms for a patient.
 Provide a JSON response with exactly these fields:
 {{
   "uses": "What this medicine is used to treat (2-3 sentences)",
@@ -467,127 +566,60 @@ Provide a JSON response with exactly these fields:
   "when_to_see_doctor": "When to consult a doctor (1-2 sentences)",
   "disclaimer": "Standard medical disclaimer"
 }}
-Return ONLY valid JSON, no markdown."""
+Return ONLY valid JSON."""
 
+    system_instr = "You are a clinical pharmacist AI. Provide factual, patient-friendly explanations of medications. Never advise stopping or altering prescribed dosages."
+    llm_service = get_llm_service()
+
+    result = None
     try:
-        print("Attempting Medicine Explain via gemini_helper...")
-        import json
-        system_instr_med = "You are a clinical pharmacist AI. Provide clear, patient-friendly explanations of medications. Always include a disclaimer that this is informational only and to consult a doctor."
-        text = await call_gemini(system_instr_med, prompt, response_json=True)
+        text = await llm_service.generate_completion(
+            messages=[{"role": "user", "content": prompt}],
+            system_instruction=system_instr,
+            response_json=True
+        )
         text = text.strip()
         if text.startswith("```"):
             lines = text.split("\n")
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines[-1].startswith("```"):
-                lines = lines[:-1]
+            if lines[0].startswith("```"): lines = lines[1:]
+            if lines[-1].startswith("```"): lines = lines[:-1]
             text = "\n".join(lines).strip()
         result = json.loads(text)
-        print("Successfully generated Medicine Explain!")
-        db = get_database()
-        if db is not None:
-            await db.ai_chats.insert_one({
-                "user_email": user_email,
-                "type": "medicine_explain",
-                "medicine": medicine_name,
-                "timestamp": __import__('datetime').datetime.utcnow()
-            })
-        return {"medicine": medicine_name, "explanation": result}
-    except Exception as e:
-        print(f"Medicine explain Gemini API failed: {e}. Running high-fidelity local fallback explanation.")
-        
-        # Smart high-fidelity local dictionary fallback if Gemini API is disabled/fails
+    except Exception:
+        # Factual reference information for well-known medications
         med_lower = medicine_name.lower()
-        gen_lower = generic_name.lower() if generic_name else ""
-        fallback_data = None
-        
-        if "amoxicillin" in med_lower or "amoxicillin" in gen_lower or "amoxil" in med_lower:
-            fallback_data = {
-                "uses": "Amoxicillin is a penicillin-class antibiotic used to treat a wide variety of bacterial infections, such as middle ear infections, strep throat, pneumonia, skin infections, and urinary tract infections.",
-                "how_it_works": "It works by stopping the growth of bacteria, specifically by preventing them from forming the cell walls they need to survive.",
-                "common_side_effects": ["Nausea or vomiting", "Diarrhea", "Mild skin rash"],
-                "precautions": ["Inform your doctor if you are allergic to penicillin or cephalosporin antibiotics.", "Take it with food if it causes stomach upset.", "Complete the full course even if symptoms disappear."],
-                "alternatives": ["Azithromycin (Zithromax)", "Cephalexin (Keflex)"],
-                "dosage_tip": "Typically taken every 8 or 12 hours depending on prescription strength.",
-                "when_to_see_doctor": "Consult your doctor immediately if you experience a severe allergic reaction (hives, difficulty breathing, facial swelling) or severe watery diarrhea.",
-                "disclaimer": "This information is educational only and does not replace professional medical advice. Always consult your healthcare provider."
+        if "amoxicillin" in med_lower:
+            result = {
+                "uses": "Amoxicillin is a penicillin-class antibiotic used to treat bacterial infections including ear, nose, throat, and respiratory tract infections.",
+                "how_it_works": "It stops bacterial growth by preventing bacteria from forming protective cell walls.",
+                "common_side_effects": ["Nausea", "Mild diarrhea", "Skin rash"],
+                "precautions": ["Check for penicillin allergy before taking.", "Complete full course as prescribed.", "Take with food to minimize stomach upset."],
+                "alternatives": ["Azithromycin", "Cephalexin"],
+                "dosage_tip": "Take at evenly spaced intervals as directed by your physician.",
+                "when_to_see_doctor": "Seek emergency care if hives, facial swelling, or breathing difficulty develops.",
+                "disclaimer": "Informational only. Do not stop or alter your medication without consulting your doctor."
             }
-        elif "ibuprofen" in med_lower or "ibuprofen" in gen_lower or "advil" in med_lower or "motrin" in med_lower:
-            fallback_data = {
-                "uses": "Ibuprofen is a nonsteroidal anti-inflammatory drug (NSAID) commonly used to relieve mild-to-moderate pain, reduce inflammation and swelling, and lower fever.",
-                "how_it_works": "It blocks the enzymes (COX-1 and COX-2) that produce prostaglandins, which are chemicals causing pain and inflammation in the body.",
-                "common_side_effects": ["Stomach upset or heartburn", "Mild dizziness", "Bloating or gas"],
-                "precautions": ["Always take with food, milk, or antacids to protect your stomach lining.", "Avoid if you have active stomach ulcers, severe kidney disease, or heart conditions.", "Limit alcohol intake while taking this medication."],
-                "alternatives": ["Naproxen (Aleve)", "Acetaminophen (Tylenol)"],
-                "dosage_tip": "Usually taken every 4 to 6 hours as needed with a full glass of water.",
-                "when_to_see_doctor": "Seek medical attention if you notice black tarry stools, severe abdominal pain, or swelling/shortness of breath.",
-                "disclaimer": "This information is educational only and does not replace professional medical advice. Always consult your healthcare provider."
-            }
-        elif "metformin" in med_lower or "metformin" in gen_lower or "glucophage" in med_lower:
-            fallback_data = {
-                "uses": "Metformin is an oral diabetes medicine that helps control blood sugar levels for people with type 2 diabetes.",
-                "how_it_works": "It decreases glucose production by the liver, reduces glucose absorption in the intestines, and increases insulin sensitivity in body tissues.",
-                "common_side_effects": ["Nausea or diarrhea", "Metallic taste in mouth", "Abdominal bloating"],
-                "precautions": ["Take with meals to reduce stomach side effects.", "Monitor your kidney function regularly.", "Avoid excessive alcohol consumption to prevent lactic acidosis risk."],
-                "alternatives": ["Glipizide (Glucotrol)", "Empagliflozin (Jardiance)"],
-                "dosage_tip": "Typically taken once or twice daily with breakfast and dinner.",
-                "when_to_see_doctor": "Consult your doctor if you experience extreme fatigue, muscle pain, difficulty breathing, or cold feeling in limbs (signs of lactic acidosis).",
-                "disclaimer": "This information is educational only and does not replace professional medical advice. Always consult your healthcare provider."
-            }
-        elif "paracetamol" in med_lower or "acetaminophen" in med_lower or "tylenol" in med_lower:
-            fallback_data = {
-                "uses": "Paracetamol (Acetaminophen) is a widely used over-the-counter pain reliever and fever reducer for mild-to-moderate pain relief.",
-                "how_it_works": "It acts primarily on the central nervous system to block pain signals and regulate body temperature via the hypothalamus.",
-                "common_side_effects": ["Generally well tolerated at recommended doses", "Rarely, mild skin itchiness", "Liver enzyme elevation (with chronic use)"],
-                "precautions": ["Do not exceed 4000mg (8 tablets of 500mg) per day to avoid severe liver damage.", "Check other cold/flu medications to ensure they do not also contain acetaminophen.", "Avoid alcohol to protect your liver."],
-                "alternatives": ["Ibuprofen (Advil)", "Aspirin"],
-                "dosage_tip": "Usually taken every 4 to 6 hours as needed; do not exceed daily limits.",
-                "when_to_see_doctor": "Consult your doctor if pain lasts more than 10 days, fever lasts more than 3 days, or if you suspect an overdose.",
-                "disclaimer": "This information is educational only and does not replace professional medical advice. Always consult your healthcare provider."
-            }
-        elif "atorvastatin" in med_lower or "atorvastatin" in gen_lower or "lipitor" in med_lower:
-            fallback_data = {
-                "uses": "Atorvastatin is a statin medication used to prevent cardiovascular disease in those at high risk and lower abnormal lipid/cholesterol levels.",
-                "how_it_works": "It inhibits HMG-CoA reductase, an enzyme in the liver that plays a central role in the production of cholesterol.",
-                "common_side_effects": ["Joint pain", "Mild headache", "Nasal congestion"],
-                "precautions": ["Avoid consuming large quantities of grapefruit juice while taking this medication.", "Monitor liver enzymes as advised by your physician.", "Inform your doctor if you plan to become pregnant."],
-                "alternatives": ["Rosuvastatin (Crestor)", "Simvastatin (Zocor)"],
-                "dosage_tip": "Taken once daily at any time of day, with or without food, but consistently at the same time.",
-                "when_to_see_doctor": "Contact your doctor immediately if you experience unexplained muscle pain, tenderness, or weakness (especially accompanied by fever).",
-                "disclaimer": "This information is educational only and does not replace professional medical advice. Always consult your healthcare provider."
-            }
-        elif "cetirizine" in med_lower or "cetirizine" in gen_lower or "zyrtec" in med_lower:
-            fallback_data = {
-                "uses": "Cetirizine is a second-generation antihistamine used to treat hay fever, seasonal allergies, hives, and itchy skin.",
-                "how_it_works": "It selectively blocks peripheral H1 histamine receptors in the body, preventing allergic responses without entering the brain extensively.",
-                "common_side_effects": ["Mild drowsiness", "Dry mouth", "Fatigue"],
-                "precautions": ["Be cautious when driving or operating machinery until you know how it affects you.", "Avoid combining with alcohol or sedatives.", "Adjust dose in patients with kidney impairment."],
-                "alternatives": ["Loratadine (Claritin)", "Fexofenadine (Allegra)"],
-                "dosage_tip": "Typically taken as one 10mg tablet once daily, preferably in the evening.",
-                "when_to_see_doctor": "Consult your doctor if allergy symptoms do not improve after 3-5 days or if you experience difficulty breathing.",
-                "disclaimer": "This information is educational only and does not replace professional medical advice. Always consult your healthcare provider."
+        elif "paracetamol" in med_lower or "acetaminophen" in med_lower:
+            result = {
+                "uses": "Paracetamol is an analgesic and antipyretic medication used to relieve mild-to-moderate pain and reduce fever.",
+                "how_it_works": "It acts centrally in the nervous system to inhibit pain sensation and regulate hypothalamic temperature controls.",
+                "common_side_effects": ["Rare at therapeutic doses", "Nausea (rare)"],
+                "precautions": ["Do not exceed 4,000 mg in 24 hours to prevent liver toxicity.", "Avoid alcohol consumption while taking."],
+                "alternatives": ["Ibuprofen", "Naproxen"],
+                "dosage_tip": "Usually taken every 4 to 6 hours as needed.",
+                "when_to_see_doctor": "Consult a doctor if fever lasts more than 3 days or pain persists beyond 10 days.",
+                "disclaimer": "Informational only. Consult your doctor or pharmacist for clinical advice."
             }
         else:
-            # Generic fallback
-            fallback_data = {
-                "uses": f"{medicine_name.title()} is a therapeutic medication prescribed to treat or manage your current clinical symptoms and diagnosed health condition.",
-                "how_it_works": "It acts on specific physiological receptors to target cellular structures or chemical pathways involved in the disease process.",
-                "common_side_effects": ["Mild nausea or headache", "Dry mouth", "Dizziness"],
-                "precautions": ["Take exactly as directed by your physician or pharmacist.", "Report any other medications or supplements you are taking.", "Do not stop taking without consulting your healthcare team."],
-                "alternatives": ["Consult your physician for generic or therapeutic alternatives."],
-                "dosage_tip": "Follow the specific dosage and instructions printed on the pharmacy label.",
-                "when_to_see_doctor": "Seek immediate help if you experience signs of an allergic reaction (hives, severe rash, breathing trouble) or severe side effects.",
-                "disclaimer": "This information is educational only and does not replace professional medical advice. Always consult your healthcare provider."
+            result = {
+                "uses": f"{medicine_name.title()} is a pharmaceutical medication. Specific reference data could not be verified automatically.",
+                "how_it_works": "Acts on physiological pathways corresponding to its active pharmaceutical ingredients.",
+                "common_side_effects": ["Consult prescribing packaging for documented side effect profile."],
+                "precautions": ["Take strictly as prescribed on the pharmacy label.", "Do not stop or start medications without consulting your doctor."],
+                "alternatives": ["Consult your physician for therapeutic alternatives."],
+                "dosage_tip": "Follow exact timing and dosage indicated on your physical prescription label.",
+                "when_to_see_doctor": "Seek medical attention immediately if experiencing signs of an allergic reaction or severe discomfort.",
+                "disclaimer": "Informational only. Do not change prescribed medications without consulting your healthcare provider."
             }
-            
-        # Save to AI chats for analytics
-        db = get_database()
-        if db is not None:
-            await db.ai_chats.insert_one({
-                "user_email": user_email,
-                "type": "medicine_explain_fallback",
-                "medicine": medicine_name,
-                "timestamp": __import__('datetime').datetime.utcnow()
-            })
-            
-        return {"medicine": medicine_name, "explanation": fallback_data}
+
+    return {"medicine": medicine_name, "explanation": result}

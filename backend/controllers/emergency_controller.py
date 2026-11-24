@@ -30,7 +30,7 @@ async def trigger_sos_controller(user_email: str, sos_data: SOSCreate):
     notification_doc = {
         "user_email": user_email,
         "title": "Emergency SOS Broadcast Active",
-        "message": f"Emergency distress alert triggered at Lat: {sos_data.latitude:.4f}, Lng: {sos_data.longitude:.4f}. Help is being dispatched.",
+        "message": f"Emergency distress alert logged and broadcast to your designated emergency contacts at Lat: {sos_data.latitude:.4f}, Lng: {sos_data.longitude:.4f}. Note: Automated contact broadcast sent; please dial 911 or 112 directly for official emergency dispatch services.",
         "type": "emergency",
         "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "read": False

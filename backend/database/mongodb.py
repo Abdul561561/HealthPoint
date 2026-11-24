@@ -98,7 +98,22 @@ async def close_mongo_connection():
         print("Closed MongoDB connection.")
 
 def get_database():
-    global db
+    global client, db
+    try:
+        import asyncio
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop is not None and client is not None and hasattr(client, "get_io_loop"):
+        try:
+            if client.get_io_loop() != loop:
+                import certifi
+                client = AsyncIOMotorClient(MONGODB_URI, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=5000)
+                db = client[DB_NAME]
+        except Exception:
+            pass
+
     return db
 
 async def seed_doctors():

@@ -5,16 +5,16 @@ from fastapi import HTTPException, status
 from bson import ObjectId
 from database.mongodb import get_database
 from models.insurance import ClaimCreate, FavoriteHospitalRequest
-from controllers.gemini_helper import call_gemini, call_gemini_chat
+from services.llm_service import call_openrouter, call_openrouter_chat
 
-SYSTEM_DISCLAIMER = "\n\n> *Disclaimer: I am your AI Insurance Assistant. This guidance is for educational and informational purposes to help you navigate your healthcare policy. Always refer to your official policy handbook and consult with our billing desk or your insurance representative for official authorization.*"
+SYSTEM_DISCLAIMER = "\n\n> *Disclaimer: I am your AI Insurance Assistant. This guidance is for educational and informational purposes to help you navigate your healthcare policy. Estimates provided are informational and do not constitute an official claim decision or guarantee of coverage. Always refer to your official policy handbook.*"
 
-async def call_gemini_with_fallback(system_instruction: str, prompt: str) -> str:
-    """Invokes Gemini using the shared helper with automatic model fallback."""
+async def call_llm_with_fallback(system_instruction: str, prompt: str) -> str:
+    """Invokes OpenRouter LLM using the service with automatic model fallback."""
     try:
-        return await call_gemini(system_instruction, prompt)
+        return await call_openrouter(system_instruction, prompt)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI service unavailable: {e}")
+        return "I am currently unable to connect to the AI claims assistant. Please refer to your plan documentation."
 
 # --- CLAIMS SYSTEM ---
 
@@ -119,7 +119,7 @@ async def analyze_claim_controller(user_email: str, claim_id: str):
     """
     
     try:
-        raw_reply = await call_gemini_with_fallback(system_instruction, prompt)
+        raw_reply = await call_llm_with_fallback(system_instruction, prompt)
         text = raw_reply.strip()
         if text.startswith("```"):
             lines = text.split("\n")
@@ -387,7 +387,7 @@ async def chat_insurance_assistant_controller(user_email: str, message: str, ses
         history_prompt += f"{msg['role'].upper()}: {msg['content']}\n"
     history_prompt += f"USER: {message}\nMODEL:"
     
-    reply_text = await call_gemini_with_fallback(system_instruction, history_prompt)
+    reply_text = await call_llm_with_fallback(system_instruction, history_prompt)
     reply_with_disclaimer = reply_text.strip() + SYSTEM_DISCLAIMER
     
     # Append model reply

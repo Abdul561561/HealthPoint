@@ -51,18 +51,11 @@ async def register_user_controller(user_data: UserRegister):
     # Check if user already exists
     existing_user = await db.users.find_one({"email": user_data.email})
     if existing_user:
-        if existing_user.get("is_verified", True):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email is already registered"
-            )
-        else:
-            # Delete the unverified user so they can register again
-            await db.users.delete_one({"email": user_data.email})
-        
-    # Generate 6-digit OTP
-    otp_code = str(random.randint(100000, 999999))
-    
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email is already registered"
+        )
+
     # Resolve combined emergency contact (legacy compat)
     emergency_combined = user_data.emergencyContact or ""
     if user_data.emergencyContactName and user_data.emergencyContactPhone:
@@ -93,23 +86,95 @@ async def register_user_controller(user_data: UserRegister):
         "memberSince": now.strftime("%Y-%m-%d"),
         "createdAt": now,
         "updatedAt": now,
-        "is_verified": False,
-        "verification_otp": otp_code,
+        "is_verified": True,
     }
     
     result = await db.users.insert_one(user_doc)
+    user_doc["_id"] = result.inserted_id
+
+    # Parse and initialize health metrics
+    height_cm = parse_height_to_cm(user_doc.get("height", "175 cm"))
+    height_m = height_cm / 100.0
+    weight_kg = parse_weight_to_kg(user_doc.get("weight", "70 kg"))
     
-    # Print the OTP in console clearly
-    print("\n" + "="*50)
-    print(f"  [HEALTHPOINT SIGNUP OTP VERIFICATION]")
-    print(f"  USER EMAIL: {user_data.email}")
-    print(f"  OTP CODE  : {otp_code}")
-    print("="*50 + "\n")
+    if height_m > 0:
+        bmi = weight_kg / (height_m ** 2)
+    else:
+        bmi = 22.0
+        
+    if bmi < 18.5:
+        bmi_cat = "Underweight"
+    elif bmi < 25.0:
+        bmi_cat = "Normal"
+    elif bmi < 30.0:
+        bmi_cat = "Overweight"
+    else:
+        bmi_cat = "Obese"
+        
+    gender = user_doc.get("gender", "Male")
+    age = user_doc.get("age", 25)
+    if gender.lower() == "male":
+        bmr = 10 * weight_kg + 6.25 * height_cm - 5 * age + 5
+    elif gender.lower() == "female":
+        bmr = 10 * weight_kg + 6.25 * height_cm - 5 * age - 161
+    else:
+        bmr = 10 * weight_kg + 6.25 * height_cm - 5 * age - 80
+        
+    target_calories = int(bmr * 1.25)
+    target_steps = 8000 if (age > 55 or bmi >= 30.0) else 10000
+    target_water = max(8, min(12, int(weight_kg * 0.12)))
     
+    initial_metrics = {
+        "user_email": user_doc["email"],
+        "heartRate": { "current": 0, "min": 60, "max": 100, "unit": "bpm", "status": "normal" },
+        "bloodPressure": { "systolic": 0, "diastolic": 0, "unit": "mmHg", "status": "normal" },
+        "sleep": { "hours": 0.0, "quality": "N/A", "target": 8, "unit": "hrs" },
+        "calories": { "burned": 0, "intake": 0, "target": target_calories, "unit": "kcal" },
+        "steps": { "count": 0, "target": target_steps, "unit": "steps" },
+        "water": { "intake": 0, "target": target_water, "unit": "glasses" },
+        "weight": { "current": round(weight_kg, 1), "previous": round(weight_kg, 1), "unit": "kg" },
+        "bmi": { "value": round(bmi, 1), "category": bmi_cat },
+        "oxygen": { "level": 0, "unit": "%", "status": "normal" },
+        "temperature": { "value": 0.0, "unit": "°F", "status": "normal" },
+    }
+    await db.metrics.insert_one(initial_metrics)
+    
+    # Initialize default settings document
+    initial_settings = {
+        "user_email": user_doc["email"],
+        "notifications": {
+            "appointmentReminders": True,
+            "medicationAlerts": True,
+            "healthTips": False,
+            "emergencyAlerts": True,
+            "weeklyReport": True,
+            "marketingEmails": False
+        },
+        "theme": "dark",
+        "language": "en",
+        "twoFactor": False,
+        "createdAt": now,
+        "updatedAt": now
+    }
+    await db.settings.insert_one(initial_settings)
+    
+    # Generate token
+    token = create_access_token({"sub": user_doc["email"]})
+
+    user_doc["id"] = str(user_doc["_id"])
+    del user_doc["_id"]
+    if "password_hash" in user_doc:
+        del user_doc["password_hash"]
+    if "verification_otp" in user_doc:
+        del user_doc["verification_otp"]
+        
     return {
-        "status": "verification_required",
+        "status": "success",
         "email": user_data.email,
-        "message": "Verification OTP has been generated and printed to backend console."
+        "message": "User registered successfully",
+        "access_token": token,
+        "token_type": "bearer",
+        "user": user_doc
     }
 
 
@@ -252,29 +317,10 @@ async def login_user_controller(login_data: UserLogin):
             detail="Incorrect email or password"
         )
         
-    if not user.get("is_verified", True):
-        # Generate new OTP, update user record and print to console
-        otp_code = str(random.randint(100000, 999999))
-        await db.users.update_one({"_id": user["_id"]}, {"$set": {"verification_otp": otp_code}})
-        
-        print("\n" + "="*50)
-        print(f"  [HEALTHPOINT LOGIN OTP VERIFICATION]")
-        print(f"  USER EMAIL: {login_data.email}")
-        print(f"  OTP CODE  : {otp_code}")
-        print("="*50 + "\n")
-        
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "error": "verification_required",
-                "email": login_data.email,
-                "message": "Please verify your email first. A new OTP has been printed in console logs."
-            }
-        )
-        
     user["id"] = str(user["_id"])
     del user["_id"]
-    del user["password_hash"]
+    if "password_hash" in user:
+        del user["password_hash"]
     if "verification_otp" in user:
         del user["verification_otp"]
     

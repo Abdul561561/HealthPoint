@@ -22,9 +22,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { 
   loginUser, 
   loginSocialUser, 
-  verifyUserEmail, 
-  clearError, 
-  setVerificationRequired 
+  clearError 
 } from '../redux/slices/authSlice';
 
 // Inline Google Logo SVG
@@ -48,7 +46,7 @@ export default function Login() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   
-  const { verificationRequired, unverifiedEmail, error: reduxError } = useSelector(state => state.auth);
+  const { error: reduxError } = useSelector(state => state.auth);
 
   // Prefill email if remember me was ticked
   const savedEmail = localStorage.getItem('hp-remember-email');
@@ -59,14 +57,11 @@ export default function Login() {
   });
   
   const [rememberMe, setRememberMe] = useState(!!savedEmail);
-  const [otp, setOtp] = useState('');
-  const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', '']);
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingText, setLoadingText] = useState('Checking database records...');
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
-  const [otpResendSeconds, setOtpResendSeconds] = useState(0);
 
   // Social authentication states
   const [socialModal, setSocialModal] = useState(null); // 'Google' or 'Apple'
@@ -81,26 +76,15 @@ export default function Login() {
   // Sync Redux error state with local component error state
   useEffect(() => {
     if (reduxError) {
-      if (typeof reduxError === 'object' && reduxError.error === 'verification_required') {
+      if (typeof reduxError === 'object' && reduxError.message) {
         setError(reduxError.message);
-      } else {
+      } else if (typeof reduxError === 'string') {
         setError(reduxError);
+      } else {
+        setError('Login failed. Please check your credentials.');
       }
     }
   }, [reduxError]);
-
-  // Countdown timer for OTP resend
-  useEffect(() => {
-    if (otpResendSeconds > 0) {
-      const timer = setTimeout(() => setOtpResendSeconds(otpResendSeconds - 1), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [otpResendSeconds]);
-
-  // Sync OTP digits to central OTP string
-  useEffect(() => {
-    setOtp(otpDigits.join(''));
-  }, [otpDigits]);
 
   // Rotate loading texts to keep user engaged during auth
   useEffect(() => {
@@ -175,54 +159,6 @@ export default function Login() {
     } else {
       setLoading(false);
     }
-  };
-
-  // Handle OTP digit paste
-  const handleOtpPaste = (e) => {
-    e.preventDefault();
-    const pastedText = e.clipboardData.getData('text/plain').slice(0, 6);
-    if (/^\d+$/.test(pastedText)) {
-      const newDigits = [...otpDigits];
-      for (let i = 0; i < pastedText.length; i++) {
-        newDigits[i] = pastedText[i];
-      }
-      setOtpDigits(newDigits);
-      const focusIndex = Math.min(pastedText.length, 5);
-      const el = document.getElementById(`otp-${focusIndex}`);
-      el?.focus();
-    }
-  };
-
-  // Handle OTP submit
-  const handleVerifySubmit = async (e) => {
-    e.preventDefault();
-    if (otp.length < 6) {
-      setError('Please enter all 6 digits of the verification code.');
-      return;
-    }
-    setError('');
-    setLoading(true);
-    const resultAction = await dispatch(verifyUserEmail({
-      email: unverifiedEmail,
-      otp: otp
-    }));
-    if (verifyUserEmail.fulfilled.match(resultAction)) {
-      setSuccess(true);
-      setLoading(false);
-      setTimeout(() => {
-        navigate('/dashboard');
-      }, 1800);
-    } else {
-      setLoading(false);
-      setError(resultAction.payload || 'Verification code is invalid or has expired.');
-    }
-  };
-
-  // Trigger mock resend countdown
-  const handleResendOtp = () => {
-    setOtpResendSeconds(60);
-    // Simulate generation feedback in backend console
-    console.log(`[TEST MODE] Re-generated verification OTP code for: ${unverifiedEmail}`);
   };
 
   // Set social data and open modal
@@ -374,145 +310,8 @@ export default function Login() {
           )}
         </AnimatePresence>
 
-        {/* ── FLOW 1: Verification Flow (OTP Code Form) ── */}
-        {verificationRequired ? (
-          <div className="space-y-8">
-            <div className="space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
-                <Shield className="w-6 h-6 text-indigo-400" />
-              </div>
-              <div>
-                <h2 className="text-3xl font-black text-white flex items-center gap-2">
-                  Verify Your Account
-                </h2>
-                <p className="text-slate-400 mt-2 text-sm leading-relaxed">
-                  For your security, a one-time verification code has been printed directly in the{' '}
-                  <span className="text-indigo-400 font-bold bg-indigo-500/10 px-2 py-0.5 rounded-md border border-indigo-500/20">
-                    backend terminal console
-                  </span>{' '}
-                  for:
-                </p>
-                <div className="inline-flex items-center gap-2 mt-2 bg-slate-800/80 px-3.5 py-1.5 rounded-xl border border-white/5 text-sm text-slate-200 font-medium">
-                  <Mail className="w-3.5 h-3.5 text-indigo-400" />
-                  {unverifiedEmail}
-                </div>
-              </div>
-            </div>
-
-            <form onSubmit={handleVerifySubmit} className="space-y-6">
-              {error && (
-                <motion.div 
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-semibold flex items-start gap-2.5"
-                >
-                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-rose-400" />
-                  <span>{error}</span>
-                </motion.div>
-              )}
-
-              <div className="space-y-3">
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
-                  6-Digit OTP Security Code
-                </label>
-                
-                {/* Segmented OTP Boxes */}
-                <div className="flex justify-between gap-2.5" onPaste={handleOtpPaste}>
-                  {otpDigits.map((digit, idx) => (
-                    <input
-                      key={idx}
-                      id={`otp-${idx}`}
-                      type="text"
-                      maxLength={1}
-                      value={digit}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (!/^\d*$/.test(val)) return;
-                        
-                        const newDigits = [...otpDigits];
-                        newDigits[idx] = val.slice(-1);
-                        setOtpDigits(newDigits);
-                        
-                        // Auto-focus next field
-                        if (val && idx < 5) {
-                          const next = document.getElementById(`otp-${idx + 1}`);
-                          next?.focus();
-                        }
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Backspace') {
-                          if (!otpDigits[idx] && idx > 0) {
-                            const newDigits = [...otpDigits];
-                            newDigits[idx - 1] = '';
-                            setOtpDigits(newDigits);
-                            const prev = document.getElementById(`otp-${idx - 1}`);
-                            prev?.focus();
-                          } else {
-                            const newDigits = [...otpDigits];
-                            newDigits[idx] = '';
-                            setOtpDigits(newDigits);
-                          }
-                        }
-                      }}
-                      className="otp-input w-11 h-14 md:w-14 md:h-16 text-center text-xl md:text-2xl font-black text-white bg-slate-950/60 border border-white/10 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all duration-200"
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between text-xs pt-1">
-                <span className="text-slate-500">Didn't receive the code?</span>
-                <button
-                  type="button"
-                  disabled={otpResendSeconds > 0}
-                  onClick={handleResendOtp}
-                  className={`font-bold transition-all focus:outline-none flex items-center gap-1 ${
-                    otpResendSeconds > 0 
-                      ? 'text-slate-500 cursor-not-allowed' 
-                      : 'text-indigo-400 hover:text-indigo-300'
-                  }`}
-                >
-                  {otpResendSeconds > 0 ? (
-                    <>Resend in {otpResendSeconds}s</>
-                  ) : (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      Request New Code
-                    </>
-                  )}
-                </button>
-              </div>
-
-              <div className="space-y-3 pt-2">
-                <motion.button
-                  whileTap={{ scale: 0.98 }}
-                  type="submit"
-                  disabled={otp.length < 6}
-                  className={`btn-primary w-full py-4 text-sm font-bold flex items-center justify-center gap-2 rounded-2xl ${
-                    otp.length < 6 ? 'opacity-60 cursor-not-allowed' : 'shadow-glow-primary'
-                  }`}
-                >
-                  Verify Verification Code <ArrowRight className="w-4 h-4" />
-                </motion.button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    // Reset verification requirement state in Redux slices cleanly
-                    dispatch(setVerificationRequired({ required: false, email: null }));
-                    setError('');
-                    setOtpDigits(['', '', '', '', '', '']);
-                  }}
-                  className="w-full text-center text-xs text-slate-500 hover:text-slate-350 transition-colors font-medium hover:underline py-2"
-                >
-                  Go back to Sign In
-                </button>
-              </div>
-            </form>
-          </div>
-        ) : (
-          /* ── FLOW 2: Normal Login Flow ── */
-          <div className="space-y-8">
+        {/* ── Login Form ── */}
+        <div className="space-y-8">
             
             {/* Header branding on mobile */}
             <div className="flex items-center gap-2.5 lg:hidden">
@@ -748,7 +547,6 @@ export default function Login() {
               </Link>
             </p>
           </div>
-        )}
       </div>
 
       {/* ── FLOW 3: Social OAuth Mock Modal Backdrop Overlay ── */}

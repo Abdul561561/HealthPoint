@@ -7,10 +7,11 @@ pyjwt
 passlib[bcrypt]
 python-dotenv
 bcrypt
-google-generativeai
 cloudinary
 httpx
 scikit-learn
 numpy
 email-validator
 python-multipart
+pypdf
+pillow

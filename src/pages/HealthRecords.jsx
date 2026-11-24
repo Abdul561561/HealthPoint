@@ -125,7 +125,7 @@ export default function HealthRecords() {
     setAnalysisLoading(true);
     setAnalysisText('');
     try {
-      const data = await analyzeMedicalReport(record.title, record.category, record.url);
+      const data = await analyzeMedicalReport(record.title, record.category, record.url, record.id);
       setAnalysisText(data.analysis);
     } catch (err) {
       console.error(err);

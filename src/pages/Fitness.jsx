@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Dumbbell, Flame, Clock, Play, CheckCircle, Plus, TrendingUp, Timer, Sparkles } from 'lucide-react';
+import { Dumbbell, Flame, Clock, Play, CheckCircle, Plus, TrendingUp, Timer, Sparkles, RefreshCw } from 'lucide-react';
 import { FITNESS_TYPES } from '../utils/constants';
 
 const exercises = [
@@ -117,18 +117,24 @@ export default function Fitness() {
     setShowAiPlan(true);
     setAiPlanLoading(true);
     setAiPlanText('');
+
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("AI Workout generation timed out after 15s")), 15000)
+    );
+
     try {
-      const data = await generateWorkoutPlan({
-        age: user?.age || 28,
-        weight: user?.weight || "72 kg",
-        height: user?.height || "5'10\"",
+      const planPromise = generateWorkoutPlan({
+        age: user?.age ? parseInt(user.age) : 28,
+        weight: user?.weight ? `${user.weight} kg` : "72 kg",
+        height: user?.height ? `${user.height} cm` : "175 cm",
         fitness_level: "Intermediate",
         goals: "Build lean muscle, increase cardiovascular endurance, and dynamic flexibility"
       });
-      setAiPlanText(data.plan);
+      const data = await Promise.race([planPromise, timeoutPromise]);
+      setAiPlanText(data.plan || "Workout routine generated.");
     } catch (err) {
-      console.error(err);
-      setAiPlanText("I apologize, but I am unable to connect to the AI Workout Routine Generator right now. Please try again later.");
+      console.error("Workout generation error:", err);
+      setAiPlanText("I apologize, but I am unable to connect to the AI Workout Routine Generator right now. Please verify your connection or click Re-generate below.");
     } finally {
       setAiPlanLoading(false);
     }
@@ -453,10 +459,18 @@ export default function Fitness() {
                 </div>
               )}
 
-              <div className="pt-4 border-t border-slate-100 dark:border-white/5 mt-6 flex justify-end">
+              <div className="pt-4 border-t border-slate-100 dark:border-white/5 mt-6 flex items-center justify-between">
+                {!aiPlanLoading && (
+                  <button
+                    onClick={handleGenerateWorkout}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-primary-500 hover:bg-primary-500/10 transition-all flex items-center gap-1.5"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" /> Re-generate Routine
+                  </button>
+                )}
                 <button
                   onClick={() => setShowAiPlan(false)}
-                  className="px-5 py-2.5 rounded-xl bg-slate-900 text-white dark:bg-white dark:text-black font-semibold text-sm transition-all"
+                  className="px-5 py-2.5 rounded-xl bg-slate-900 text-white dark:bg-white dark:text-black font-semibold text-sm transition-all ml-auto"
                 >
                   Close Plan
                 </button>

@@ -6,6 +6,8 @@ import datetime
 import cloudinary
 import cloudinary.uploader
 from database.mongodb import get_database
+from services.document_service import validate_file_metadata, save_file_locally, extract_text_from_pdf
+from services.rag_service import get_rag_service
 
 CLOUDINARY_URL = os.getenv("CLOUDINARY_URL", "")
 if CLOUDINARY_URL:
@@ -65,21 +67,25 @@ async def upload_record_file_controller(user_email: str, file: UploadFile, title
     try:
         file_content = await file.read()
         
-        # Calculate file size label
+        # 1. Validate file size and type
+        validate_file_metadata(file.filename, file.content_type, len(file_content))
+        
+        # 2. Save file locally
+        stored_filename, local_path = save_file_locally(file_content, file.filename, folder="records")
+        
+        # 3. Calculate file size label
         size_bytes = len(file_content)
         if size_bytes < 1024 * 1024:
             file_size_str = f"{round(size_bytes / 1024, 1)} KB"
         else:
             file_size_str = f"{round(size_bytes / (1024 * 1024), 1)} MB"
             
-        # Cloudinary upload
+        # 4. Cloudinary upload if configured, else local URL
         if CLOUDINARY_URL or os.getenv("CLOUDINARY_CLOUD_NAME"):
             upload_result = cloudinary.uploader.upload(file_content, folder="medical_records")
             secure_url = upload_result.get("secure_url")
         else:
-            # Simulated upload fallback
-            print("CLOUDINARY_URL missing for records. Using dynamic simulation fallback.")
-            secure_url = f"https://res.cloudinary.com/healthpoint/image/upload/v1720000000/medical_records/mock_{ObjectId()}_{file.filename}"
+            secure_url = f"/api/uploads/records/{stored_filename}"
             
         record_doc = {
             "user_email": user_email,
@@ -92,13 +98,24 @@ async def upload_record_file_controller(user_email: str, file: UploadFile, title
             "category": category,
             "fileSize": file_size_str,
             "url": secure_url,
-            "filename": file.filename
+            "filename": file.filename,
+            "stored_filename": stored_filename,
+            "local_path": local_path
         }
         
+        # 5. Extract text if PDF and index into user's RAG namespace
+        if file_content[:4] == b"%PDF":
+            pdf_text = extract_text_from_pdf(file_content)
+            if pdf_text:
+                get_rag_service().add_user_document(user_email, title, pdf_text, source="Medical Record")
+                record_doc["extracted_text"] = pdf_text[:3000]
+
         result = await db.records.insert_one(record_doc)
         record_doc["id"] = str(result.inserted_id)
         del record_doc["_id"]
         return record_doc
+    except HTTPException as he:
+        raise he
     except Exception as e:
         print(f"Record upload error: {e}")
         raise HTTPException(status_code=500, detail="Failed to upload medical record file")

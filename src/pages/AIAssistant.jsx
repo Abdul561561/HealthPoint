@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bot, Send, Mic, RefreshCw, Sparkles, Heart, Activity, Moon, Pill } from 'lucide-react';
 import { sleep } from '../utils/helpers';
-import { fetchChatHistory, sendChatMessage } from '../services/aiApi';
+import { fetchChatHistory, sendChatMessage, resetChatSession } from '../services/aiApi';
 import { useSelector } from 'react-redux';
 import StructuredResponse from '../components/StructuredResponse';
 
@@ -179,8 +179,10 @@ export default function AIAssistant() {
         {
           id: Date.now() + 1,
           role: 'assistant',
-          message: "I'm sorry, I'm currently unable to connect to Gemini services. Please try again later.",
-          timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+          message: "I am currently having trouble connecting to AI services. Please try again in a moment.",
+          timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+          failed: true,
+          retryText: userMsg
         }
       ]);
     } finally {
@@ -191,11 +193,11 @@ export default function AIAssistant() {
   const handleResetChat = async () => {
     try {
       setIsTyping(true);
-      // Generate a new clean session by clearing sessionId
-      setSessionId(null);
-      const response = await sendChatMessage("Hello", null);
-      setSessionId(response.session_id);
-      const mappedHistory = response.history.map((m, idx) => ({
+      const data = await resetChatSession();
+      if (data && data.session_id) {
+        setSessionId(data.session_id);
+      }
+      const mappedHistory = (data.history || []).map((m, idx) => ({
         id: idx,
         role: m.role === 'model' ? 'assistant' : 'user',
         message: m.content,
@@ -230,7 +232,7 @@ export default function AIAssistant() {
               <h3 className="font-bold text-slate-900 dark:text-white">HealthAI</h3>
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                <span className="text-xs text-green-500 font-medium">Online — Gemini 1.5</span>
+                <span className="text-xs text-green-500 font-medium">Online — OpenRouter AI</span>
               </div>
             </div>
           </div>
@@ -321,7 +323,17 @@ export default function AIAssistant() {
                   >
                     {msg.role === 'user' ? msg.message : <StructuredResponse text={msg.message} type="chat" />}
                   </div>
-                  <span className="text-[10px] text-slate-400">{msg.timestamp}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-400">{msg.timestamp}</span>
+                    {msg.failed && msg.retryText && (
+                      <button
+                        onClick={() => sendMessage(msg.retryText)}
+                        className="text-[10px] text-primary-500 font-bold hover:underline flex items-center gap-1"
+                      >
+                        <RefreshCw className="w-2.5 h-2.5" /> Retry
+                      </button>
+                    )}
+                  </div>
                 </div>
                 {msg.role === 'user' && (
                   <div className="w-8 h-8 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 flex items-center justify-center flex-shrink-0 mt-1 text-white text-xs font-bold shadow-sm">

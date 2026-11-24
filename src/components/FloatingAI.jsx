@@ -4,7 +4,7 @@ import {
   Bot, Send, Mic, RefreshCw, X, Minimize2, Maximize2, Sparkles, MessageSquare, Trash2
 } from 'lucide-react';
 import { useSelector } from 'react-redux';
-import { sendChatMessage, fetchChatHistory } from '../services/aiApi';
+import { sendChatMessage, fetchChatHistory, resetChatSession } from '../services/aiApi';
 import StructuredResponse from './StructuredResponse';
 
 const suggestedPrompts = [
@@ -90,8 +90,10 @@ export default function FloatingAI() {
         {
           id: Date.now() + 1,
           role: 'assistant',
-          message: "I am having trouble connecting to the medical AI service. Please verify your connection and try again.",
-          timestamp: 'Just now'
+          message: "I am having trouble connecting to the AI service. Please verify your connection and try again.",
+          timestamp: 'Just now',
+          failed: true,
+          retryText: userMsg
         }
       ]);
     } finally {
@@ -99,11 +101,24 @@ export default function FloatingAI() {
     }
   };
 
-  const clearChat = () => {
-    setMessages([
-      { id: 1, role: 'assistant', message: 'Hello! I am your HealthAI companion. How can I help you today?', timestamp: 'Now' }
-    ]);
-    setSessionId(null);
+  const clearChat = async () => {
+    try {
+      setIsTyping(true);
+      const data = await resetChatSession();
+      if (data && data.session_id) {
+        setSessionId(data.session_id);
+      }
+      setMessages([
+        { id: 1, role: 'assistant', message: 'Hello! I am your HealthAI companion. How can I help you today?', timestamp: 'Now' }
+      ]);
+    } catch (err) {
+      setMessages([
+        { id: 1, role: 'assistant', message: 'Hello! I am your HealthAI companion. How can I help you today?', timestamp: 'Now' }
+      ]);
+      setSessionId(null);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   return (

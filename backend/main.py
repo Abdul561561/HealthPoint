@@ -66,12 +66,20 @@ app.include_router(maps_router, prefix="/api")
 app.include_router(notifications_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 
+import os
+from fastapi.staticfiles import StaticFiles
+
+# Ensure upload directory exists
+uploads_path = os.path.join(os.path.dirname(__file__), "uploads")
+os.makedirs(uploads_path, exist_ok=True)
+app.mount("/api/uploads", StaticFiles(directory=uploads_path), name="uploads")
+
 @app.get("/")
 def read_root():
     return {
         "name": "HealthPoint Backend API v2",
         "status": "online",
-        "features": ["MongoDB", "Google Maps", "Gemini AI"],
+        "features": ["MongoDB", "Google Maps", "OpenRouter AI"],
         "docs_url": "/docs"
     }
 

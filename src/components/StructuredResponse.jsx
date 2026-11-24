@@ -7,30 +7,44 @@ import {
   ArrowRight, Info, Check, Clock
 } from 'lucide-react';
 
-// Helper to parse bold markdown
+// Helper to parse bold markdown and inline code
 const parseBold = (text) => {
-  const parts = [];
-  const boldRegex = /\*\*(.*?)\*\*/g;
-  let lastIndex = 0;
-  let match;
-
-  while ((match = boldRegex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(text.substring(lastIndex, match.index));
+  if (!text) return null;
+  // First split by inline code `...`
+  const codeParts = text.split(/(`[^`]+`)/g);
+  return codeParts.map((segment, cIdx) => {
+    if (segment.startsWith('`') && segment.endsWith('`') && segment.length >= 2) {
+      return (
+        <code key={cIdx} className="px-1.5 py-0.5 rounded-md bg-slate-200 dark:bg-white/10 text-primary-600 dark:text-primary-400 font-mono text-[11px] font-bold">
+          {segment.slice(1, -1)}
+        </code>
+      );
     }
-    parts.push(
-      <strong key={match.index} className="font-extrabold text-primary-600 dark:text-primary-400">
-        {match[1]}
-      </strong>
-    );
-    lastIndex = boldRegex.lastIndex;
-  }
+    
+    // Parse bold in non-code segment
+    const boldRegex = /\*\*(.*?)\*\*/g;
+    const parts = [];
+    let lastIndex = 0;
+    let match;
 
-  if (lastIndex < text.length) {
-    parts.push(text.substring(lastIndex));
-  }
+    while ((match = boldRegex.exec(segment)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(segment.substring(lastIndex, match.index));
+      }
+      parts.push(
+        <strong key={match.index} className="font-extrabold text-primary-600 dark:text-primary-400">
+          {match[1]}
+        </strong>
+      );
+      lastIndex = boldRegex.lastIndex;
+    }
 
-  return parts.length > 0 ? parts : text;
+    if (lastIndex < segment.length) {
+      parts.push(segment.substring(lastIndex));
+    }
+
+    return parts.length > 0 ? parts : segment;
+  });
 };
 
 // Helper to parse standard lists, paragraphs, headers
@@ -208,9 +222,51 @@ export default function StructuredResponse({ text, type = 'chat' }) {
     }
   };
 
-  // If the text is general and does not contain our structured headings, fallback to a neat standard render
+  // If the text is general and does not contain our structured headings, fallback to rich formatted render
   const sectionKeysPresent = Object.keys(sections).filter(k => k !== 'general' && k !== 'actions_intro');
   if (sectionKeysPresent.length === 0) {
+    // Check if code blocks exist
+    if (text.includes('```')) {
+      const parts = text.split(/(```[\s\S]*?```)/g);
+      return (
+        <div className="space-y-3">
+          {parts.map((part, pIdx) => {
+            if (part.startsWith('```') && part.endsWith('```')) {
+              const codeLines = part.slice(3, -3).trim().split('\n');
+              let lang = 'code';
+              let codeBody = part.slice(3, -3).trim();
+              if (codeLines[0] && !codeLines[0].includes(' ') && codeLines[0].length < 20) {
+                lang = codeLines[0];
+                codeBody = codeLines.slice(1).join('\n');
+              }
+              return (
+                <div key={pIdx} className="my-2.5 rounded-xl overflow-hidden border border-slate-700/50 bg-slate-950 shadow-md">
+                  <div className="flex items-center justify-between px-3 py-1 bg-slate-900 border-b border-slate-800 text-[10px] font-mono text-slate-400">
+                    <span className="uppercase">{lang}</span>
+                  </div>
+                  <pre className="p-3 text-xs font-mono text-emerald-400 dark:text-emerald-350 overflow-x-auto whitespace-pre leading-relaxed">
+                    <code>{codeBody}</code>
+                  </pre>
+                </div>
+              );
+            }
+            if (part.includes('|') && part.split('\n').some(l => l.trim().startsWith('|'))) {
+              const firstPipe = part.indexOf('|');
+              const beforeTable = part.substring(0, firstPipe);
+              const afterTable = part.substring(firstPipe);
+              return (
+                <div key={pIdx} className="space-y-2">
+                  {renderParagraphOrList(beforeTable)}
+                  {parseMarkdownTable(afterTable)}
+                </div>
+              );
+            }
+            return <div key={pIdx}>{renderParagraphOrList(part)}</div>;
+          })}
+        </div>
+      );
+    }
+
     if (hasTable) {
       const tableText = text.substring(text.indexOf('|'));
       const beforeTable = text.substring(0, text.indexOf('|'));

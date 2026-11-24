@@ -629,7 +629,7 @@ export default function Pharmacy() {
           {prescriptionLoading && (
             <div className="absolute inset-0 bg-white/70 dark:bg-slate-900/75 backdrop-blur-sm flex flex-col items-center justify-center pointer-events-none z-[999] rounded-2xl">
               <div className="w-12 h-12 border-4 border-violet-500 border-t-transparent rounded-full animate-spin mb-3" />
-              <p className="text-sm font-bold text-violet-600 dark:text-violet-400">Gemini is analyzing your prescription...</p>
+              <p className="text-sm font-bold text-violet-600 dark:text-violet-400">HealthPoint AI is analyzing your prescription...</p>
               <p className="text-xs text-slate-400 mt-1">Extracting medicine instructions & recovery guidance</p>
             </div>
           )}
@@ -705,7 +705,7 @@ export default function Pharmacy() {
                     </div>
                     <div>
                       <h4 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
-                        Gemini AI Prescription Analysis
+                        HealthPoint AI Prescription Analysis
                       </h4>
                       <p className="text-[10px] text-violet-500 dark:text-violet-400 font-semibold uppercase tracking-wider">Clinical Pharmacist AI v2.5</p>
                     </div>

@@ -37,6 +37,10 @@ export const registerUser = createAsyncThunk(
   async (userData, { rejectWithValue }) => {
     try {
       const response = await api.post('/auth/register', userData);
+      const { access_token, user } = response.data;
+      if (access_token) {
+        localStorage.setItem('hp-token', access_token);
+      }
       return response.data;
     } catch (err) {
       const message = err.response?.data?.detail || 'Registration failed';
@@ -133,13 +137,7 @@ const authSlice = createSlice({
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.loading = false;
-        if (action.payload && action.payload.error === "verification_required") {
-          state.verificationRequired = true;
-          state.unverifiedEmail = action.payload.email;
-          state.error = action.payload.message;
-        } else {
-          state.error = typeof action.payload === 'string' ? action.payload : 'Login failed';
-        }
+        state.error = typeof action.payload === 'string' ? action.payload : 'Login failed';
       })
       
       // Social Login
@@ -166,17 +164,10 @@ const authSlice = createSlice({
       })
       .addCase(registerUser.fulfilled, (state, action) => {
         state.loading = false;
-        if (action.payload && action.payload.status === "verification_required") {
-          state.verificationRequired = true;
-          state.unverifiedEmail = action.payload.email;
-          state.user = null;
-          state.isAuthenticated = false;
-        } else {
-          state.isAuthenticated = true;
-          state.user = action.payload.user;
-          state.verificationRequired = false;
-          state.unverifiedEmail = null;
-        }
+        state.isAuthenticated = true;
+        state.user = action.payload?.user || null;
+        state.verificationRequired = false;
+        state.unverifiedEmail = null;
       })
       .addCase(registerUser.rejected, (state, action) => {
         state.loading = false;
