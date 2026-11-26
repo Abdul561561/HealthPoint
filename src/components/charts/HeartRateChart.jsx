@@ -13,18 +13,35 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 export default function HeartRateChart({ height = 200 }) {
   const { isDark } = useTheme();
   const { metrics } = useSelector((state) => state.health);
-  
-  const hr = metrics?.heartRate?.current || 72;
+
+  const history = (metrics?.history?.heartRate || []).filter(e => typeof e?.current === 'number' && e.current > 0);
+  const points = history.length > 0
+    ? history
+    : (typeof metrics?.heartRate?.current === 'number' && metrics.heartRate.current > 0
+        ? [{ current: metrics.heartRate.current, recordedAt: null }]
+        : []);
+
+  if (points.length === 0) {
+    return (
+      <div style={{ height }} className="flex items-center justify-center text-xs text-slate-400 border border-dashed border-slate-200 dark:border-white/10 rounded-xl">
+        No heart rate measurements recorded yet
+      </div>
+    );
+  }
+
+  const labels = points.map((p, idx) =>
+    p.recordedAt ? new Date(p.recordedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : `Entry ${idx + 1}`
+  );
 
   const data = {
-    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+    labels,
     datasets: [
       {
         label: 'Heart Rate',
-        data: [hr - 4, hr, hr + 3, hr - 1, hr + 1, hr - 3, hr],
+        data: points.map(p => p.current),
         borderColor: '#f43f5e',
         backgroundColor: 'rgba(244, 63, 94, 0.1)',
-        tension: 0.4,
+        tension: 0.35,
         fill: true,
         pointBackgroundColor: '#f43f5e',
         pointRadius: 4,
@@ -42,8 +59,8 @@ export default function HeartRateChart({ height = 200 }) {
       ...defaultChartOptions(isDark).scales,
       y: {
         ...defaultChartOptions(isDark).scales.y,
-        min: 55,
-        max: 90,
+        suggestedMin: 50,
+        suggestedMax: 110,
         ticks: {
           ...defaultChartOptions(isDark).scales.y.ticks,
           callback: (v) => `${v} bpm`,

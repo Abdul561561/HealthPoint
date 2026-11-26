@@ -2,11 +2,10 @@ import React from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement,
-  Title, Tooltip, Legend, Filler
+  Title, Tooltip, Legend, Filler,
 } from 'chart.js';
 import { useTheme } from '../../hooks/useTheme';
 import { defaultChartOptions } from '../../utils/helpers';
-
 import { useSelector } from 'react-redux';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
@@ -16,67 +15,78 @@ export default function BMITrendChart({ height = 240 }) {
   const { user } = useSelector((state) => state.auth);
   const { metrics } = useSelector((state) => state.health);
 
-  const currentWeight = metrics?.weight?.current || 72.0;
-
-  // Height parsing helper to meters
   const parseHeightToMeters = (hStr) => {
-    if (!hStr) return 1.75;
-    const clean = hStr.toLowerCase().trim();
-    if (clean.includes('cm')) {
-      const cms = parseFloat(clean);
-      return cms / 100;
-    }
+    if (!hStr) return null;
+    const clean = String(hStr).toLowerCase().trim();
     const match = clean.match(/(\d+)\s*(?:'|ft|feet)\s*(\d+)?/);
     if (match) {
-      const feet = parseInt(match[1]);
-      const inches = match[2] ? parseInt(match[2]) : 0;
-      const totalInches = feet * 12 + inches;
-      return (totalInches * 2.54) / 100;
+      const feet = parseInt(match[1], 10);
+      const inches = match[2] ? parseInt(match[2], 10) : 0;
+      return ((feet * 12 + inches) * 2.54) / 100;
     }
     const val = parseFloat(clean);
-    if (val > 3) return val / 100;
-    return val;
+    if (!val || Number.isNaN(val)) return null;
+    return val > 3 ? val / 100 : val;
   };
 
-  const heightMeters = parseHeightToMeters(user?.height);
-  const healthyMin = parseFloat((18.5 * (heightMeters * heightMeters)).toFixed(1)) || 56.6;
-  const healthyMax = parseFloat((24.9 * (heightMeters * heightMeters)).toFixed(1)) || 76.2;
+  const history = (metrics?.history?.weight || []).filter(e => typeof e?.current === 'number' && e.current > 0);
+  const points = history.length > 0
+    ? history
+    : (typeof metrics?.weight?.current === 'number' && metrics.weight.current > 0
+        ? [{ current: metrics.weight.current, recordedAt: null }]
+        : []);
 
-  const data = {
-    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-    datasets: [
-      {
-        label: 'My Weight',
-        data: [currentWeight + 0.8, currentWeight + 0.5, currentWeight + 0.4, currentWeight + 0.1, currentWeight + 0.2, currentWeight, currentWeight],
-        borderColor: '#22c55e', // Green
-        backgroundColor: 'transparent',
-        tension: 0.3,
-        pointBackgroundColor: '#22c55e',
-        pointRadius: 5,
-        borderWidth: 3,
-        zIndex: 2,
-      },
+  if (points.length === 0) {
+    return (
+      <div style={{ height }} className="flex items-center justify-center text-xs text-slate-400 border border-dashed border-slate-200 dark:border-white/10 rounded-xl">
+        No weight measurements recorded yet
+      </div>
+    );
+  }
+
+  const heightMeters = parseHeightToMeters(user?.height);
+  const healthyMin = heightMeters ? parseFloat((18.5 * heightMeters * heightMeters).toFixed(1)) : null;
+  const healthyMax = heightMeters ? parseFloat((24.9 * heightMeters * heightMeters).toFixed(1)) : null;
+
+  const labels = points.map((p) =>
+    p.recordedAt ? new Date(p.recordedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Recorded'
+  );
+
+  const datasets = [
+    {
+      label: 'My Weight',
+      data: points.map(p => p.current),
+      borderColor: '#22c55e',
+      backgroundColor: 'transparent',
+      tension: 0.3,
+      pointBackgroundColor: '#22c55e',
+      pointRadius: 5,
+      borderWidth: 3,
+    },
+  ];
+
+  if (healthyMax !== null && healthyMin !== null) {
+    datasets.push(
       {
         label: 'Healthy Zone Upper Limit',
-        data: [healthyMax, healthyMax, healthyMax, healthyMax, healthyMax, healthyMax, healthyMax],
-        borderColor: 'rgba(239, 68, 68, 0.25)', // Soft red
+        data: labels.map(() => healthyMax),
+        borderColor: 'rgba(239, 68, 68, 0.25)',
         borderDash: [5, 5],
         borderWidth: 1.5,
         fill: false,
         pointRadius: 0,
-        labelOffset: 10,
       },
       {
         label: 'Healthy Zone Lower Limit',
-        data: [healthyMin, healthyMin, healthyMin, healthyMin, healthyMin, healthyMin, healthyMin],
-        borderColor: 'rgba(59, 130, 246, 0.25)', // Soft blue
+        data: labels.map(() => healthyMin),
+        borderColor: 'rgba(59, 130, 246, 0.25)',
         borderDash: [5, 5],
         borderWidth: 1.5,
         fill: false,
         pointRadius: 0,
       }
-    ]
-  };
+    );
+  }
 
   const options = {
     ...defaultChartOptions(isDark),
@@ -84,8 +94,6 @@ export default function BMITrendChart({ height = 240 }) {
       ...defaultChartOptions(isDark).scales,
       y: {
         ...defaultChartOptions(isDark).scales.y,
-        min: 50,
-        max: 90,
         ticks: { ...defaultChartOptions(isDark).scales.y.ticks, callback: (v) => `${v} kg` },
       },
     },
@@ -93,7 +101,7 @@ export default function BMITrendChart({ height = 240 }) {
 
   return (
     <div style={{ height }}>
-      <Line data={data} options={options} />
+      <Line data={{ labels, datasets }} options={options} />
     </div>
   );
 }

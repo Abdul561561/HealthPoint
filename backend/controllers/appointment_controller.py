@@ -39,8 +39,8 @@ async def create_appointment_controller(user_email: str, appt_data: AppointmentC
         "status": "confirmed",
         "hospital": appt_data.hospital,
         "notes": getattr(appt_data, 'notes', ''),
-        "createdAt": datetime.datetime.utcnow(),
-        "updatedAt": datetime.datetime.utcnow(),
+        "createdAt": datetime.datetime.now(datetime.timezone.utc),
+        "updatedAt": datetime.datetime.now(datetime.timezone.utc),
     }
     
     result = await db.appointments.insert_one(appt_doc)

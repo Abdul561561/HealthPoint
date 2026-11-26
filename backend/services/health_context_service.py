@@ -15,6 +15,7 @@ Rules:
 from typing import Dict, Any, Optional
 from database.mongodb import get_database
 from services.intent_service import IntentType
+from controllers.auth_controller import parse_height_to_cm, parse_weight_to_kg
 
 async def build_minimized_health_context(
     user_email: str,
@@ -54,17 +55,14 @@ async def build_minimized_health_context(
             height = user.get("height") if user else None
             weight = user.get("weight") if user else None
             bmi_metric = metrics.get("bmi", {}) if metrics else {}
-            
-            if height and weight:
-                try:
-                    h_m = float(height) / 100.0
-                    w_kg = float(weight)
-                    computed_bmi = round(w_kg / (h_m ** 2), 1)
-                except Exception:
-                    computed_bmi = bmi_metric.get("value")
-                
-                context_lines.append(f"Recorded Height: {height} cm")
-                context_lines.append(f"Recorded Weight: {weight} kg")
+
+            h_cm = parse_height_to_cm(height)
+            w_kg = parse_weight_to_kg(weight)
+
+            if h_cm and w_kg:
+                computed_bmi = round(w_kg / ((h_cm / 100.0) ** 2), 1)
+                context_lines.append(f"Recorded Height: {h_cm} cm")
+                context_lines.append(f"Recorded Weight: {w_kg} kg")
                 context_lines.append(f"Current BMI: {computed_bmi} ({bmi_metric.get('category', 'Calculated')})")
             elif bmi_metric.get("value"):
                 context_lines.append(f"Current Recorded BMI: {bmi_metric.get('value')} ({bmi_metric.get('category', 'Recorded')})")

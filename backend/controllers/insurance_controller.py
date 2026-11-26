@@ -36,7 +36,7 @@ async def create_claim_controller(user_email: str, claim_data: ClaimCreate):
     if db is None:
         raise HTTPException(status_code=503, detail="Database connection unavailable")
         
-    uploaded_docs = [doc.dict() for doc in claim_data.uploaded_documents] if claim_data.uploaded_documents else []
+    uploaded_docs = [doc.model_dump() for doc in claim_data.uploaded_documents] if claim_data.uploaded_documents else []
     
     claim_doc = {
         "user_email": user_email,
@@ -49,7 +49,7 @@ async def create_claim_controller(user_email: str, claim_data: ClaimCreate):
         "timeline": [
             {
                 "status": "Submitted",
-                "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 "note": "Claim submitted successfully. Awaiting document verification."
             }
         ]
@@ -295,7 +295,7 @@ async def chat_insurance_assistant_controller(user_email: str, message: str, ses
         
     user = await db.users.find_one({"email": user_email})
     user_name = user.get("name", "Member") if user else "Member"
-    user_age = user.get("age", 30) if user else 30
+    user_age = user.get("age") if user and user.get("age") is not None else "Not provided"
     
     # Retrieve user claims
     claims_cursor = db.claimRequests.find({"user_email": user_email})
@@ -344,19 +344,22 @@ async def chat_insurance_assistant_controller(user_email: str, message: str, ses
     - Never construct imaginary companies or pretend to link directly to actual provider servers. Refer strictly to our database of 5 curated policies.
     """
     
-    # Handle session history retrieval
-    session_query = {}
+    # Handle session history retrieval with strict user ownership check
     if session_id:
         try:
-            session_query["_id"] = ObjectId(session_id)
+            obj_id = ObjectId(session_id)
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid session ID format")
+
+        session = await db.aiInsuranceChats.find_one({"_id": obj_id, "user_email": user_email})
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Insurance chat session not found or you are not authorized to access it.",
+            )
     else:
-        session_query["user_email"] = user_email
-        session_query["status"] = "active"
-        
-    session = await db.aiInsuranceChats.find_one(session_query)
-    
+        session = await db.aiInsuranceChats.find_one({"user_email": user_email, "status": "active"})
+
     if not session:
         session_doc = {
             "user_email": user_email,
@@ -375,9 +378,9 @@ async def chat_insurance_assistant_controller(user_email: str, message: str, ses
         session["id"] = str(session["_id"])
         del session["_id"]
         
-    # Append user message
+    # Append user message (scoped to owner)
     await db.aiInsuranceChats.update_one(
-        {"_id": ObjectId(session["id"])},
+        {"_id": ObjectId(session["id"]), "user_email": user_email},
         {"$push": {"messages": {"role": "user", "content": message}}}
     )
     
@@ -390,9 +393,9 @@ async def chat_insurance_assistant_controller(user_email: str, message: str, ses
     reply_text = await call_llm_with_fallback(system_instruction, history_prompt)
     reply_with_disclaimer = reply_text.strip() + SYSTEM_DISCLAIMER
     
-    # Append model reply
+    # Append model reply (scoped to owner)
     await db.aiInsuranceChats.update_one(
-        {"_id": ObjectId(session["id"])},
+        {"_id": ObjectId(session["id"]), "user_email": user_email},
         {"$push": {"messages": {"role": "model", "content": reply_with_disclaimer}}}
     )
     

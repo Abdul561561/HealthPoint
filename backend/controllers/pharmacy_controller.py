@@ -3,19 +3,22 @@ import random
 import os
 import json
 import datetime
+import mimetypes
 from fastapi import UploadFile, HTTPException, status
+from fastapi.responses import FileResponse, RedirectResponse
 from bson import ObjectId
 import cloudinary
 import cloudinary.uploader
 from dotenv import load_dotenv
 from database.mongodb import get_database
 from models.pharmacy import OrderCreate
-from services.llm_service import call_openrouter, get_llm_service
+from services.llm_service import get_llm_service
 from services.document_service import (
     extract_text_from_pdf,
     parse_prescription_text,
     save_file_locally,
-    validate_file_metadata
+    validate_file_metadata,
+    resolve_safe_upload_path,
 )
 
 # Load .env
@@ -159,6 +162,18 @@ async def analyze_prescription_image(image_bytes: bytes, mime_type: str, filenam
         print(f"[PharmacyController] OpenRouter LLM prescription analysis unavailable ({model_err}). Running local parser.")
         return parse_prescription_text(extracted_text, filename=filename)
 
+def _sanitize_prescription(pres: dict) -> dict:
+    doc = dict(pres)
+    pres_id = str(doc.pop("_id", doc.get("id", "")))
+    doc["id"] = pres_id
+    has_local = bool(doc.get("stored_filename") or doc.get("local_path"))
+    doc.pop("local_path", None)
+    doc.pop("stored_filename", None)
+    if has_local or (doc.get("url") or "").startswith("/api/uploads/"):
+        doc["url"] = f"/api/pharmacy/prescriptions/{pres_id}/download"
+    return doc
+
+
 async def upload_prescription_cloudinary(user_email: str, file: UploadFile):
     db = get_database()
     if db is None:
@@ -167,8 +182,8 @@ async def upload_prescription_cloudinary(user_email: str, file: UploadFile):
     try:
         file_content = await file.read()
         
-        # Validate file size and type
-        validate_file_metadata(file.filename, file.content_type, len(file_content))
+        # Validate file size, type, and magic bytes
+        validate_file_metadata(file.filename, file.content_type, len(file_content), content=file_content)
         
         # Save file locally
         stored_filename, local_path = save_file_locally(file_content, file.filename, folder="prescriptions")
@@ -176,35 +191,42 @@ async def upload_prescription_cloudinary(user_email: str, file: UploadFile):
         # Analyze prescription
         analysis_data = await analyze_prescription_image(file_content, file.content_type, file.filename)
         
-        # If Cloudinary is configured
+        external_url = None
         if CLOUDINARY_URL or os.getenv("CLOUDINARY_CLOUD_NAME"):
             upload_result = cloudinary.uploader.upload(file_content, folder="prescriptions")
-            secure_url = upload_result.get("secure_url")
-        else:
-            secure_url = f"/api/uploads/prescriptions/{stored_filename}"
+            external_url = upload_result.get("secure_url")
             
         prescription_doc = {
             "user_email": user_email,
-            "filename": file.filename,
+            "filename": os.path.basename(file.filename),
             "stored_filename": stored_filename,
             "local_path": local_path,
-            "url": secure_url,
-            "date": datetime.datetime.now().strftime("%Y-%m-%d"),
+            "url": external_url,
+            "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d"),
             "status": "verified",
             "analysis": analysis_data
         }
         result = await db.prescriptions.insert_one(prescription_doc)
+        pres_id = str(result.inserted_id)
+        if not external_url:
+            download_url = f"/api/pharmacy/prescriptions/{pres_id}/download"
+            await db.prescriptions.update_one(
+                {"_id": result.inserted_id},
+                {"$set": {"url": download_url}}
+            )
+            prescription_doc["url"] = download_url
+
         return {
-            "id": str(result.inserted_id),
-            "url": secure_url,
-            "filename": file.filename,
+            "id": pres_id,
+            "url": prescription_doc["url"],
+            "filename": prescription_doc["filename"],
             "status": "verified",
             "analysis": analysis_data
         }
     except HTTPException as he:
         raise he
     except Exception as e:
-        print(f"Prescription upload error: {e}")
+        print(f"Prescription upload error: {type(e).__name__}")
         raise HTTPException(status_code=500, detail="Failed to upload and analyze prescription")
 
 async def create_pharmacy_order(user_email: str, order_data: OrderCreate):
@@ -303,9 +325,8 @@ async def get_latest_prescription_controller(user_email: str):
     if not prescription:
         return None
         
-    prescription["id"] = str(prescription["_id"])
-    del prescription["_id"]
-    return prescription
+    return _sanitize_prescription(prescription)
+
 
 async def fetch_prescription_history_controller(user_email: str):
     db = get_database()
@@ -315,12 +336,47 @@ async def fetch_prescription_history_controller(user_email: str):
     cursor = db.prescriptions.find({"user_email": user_email})
     prescriptions = []
     async for prescription in cursor:
-        prescription["id"] = str(prescription["_id"])
-        del prescription["_id"]
-        prescriptions.append(prescription)
+        prescriptions.append(_sanitize_prescription(prescription))
         
     prescriptions.sort(key=lambda x: x.get("date", ""), reverse=True)
     return prescriptions
+
+
+async def download_prescription_file_controller(user_email: str, prescription_id: str):
+    db = get_database()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
+
+    try:
+        obj_id = ObjectId(prescription_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid prescription ID format")
+
+    prescription = await db.prescriptions.find_one({"_id": obj_id})
+    if not prescription:
+        raise HTTPException(status_code=404, detail="Prescription not found")
+
+    if prescription.get("user_email") != user_email:
+        raise HTTPException(status_code=403, detail="Not authorized to access this prescription")
+
+    stored_filename = prescription.get("stored_filename")
+    local_path = prescription.get("local_path")
+    if stored_filename or local_path:
+        safe_path = resolve_safe_upload_path("prescriptions", stored_filename=stored_filename, local_path=local_path)
+        download_name = os.path.basename(prescription.get("filename") or os.path.basename(safe_path))
+        media_type, _ = mimetypes.guess_type(download_name)
+        return FileResponse(
+            path=safe_path,
+            filename=download_name,
+            media_type=media_type or "application/octet-stream",
+        )
+
+    ext_url = prescription.get("url") or ""
+    if ext_url.startswith("https://"):
+        return RedirectResponse(url=ext_url)
+
+    raise HTTPException(status_code=404, detail="No file attached to this prescription")
+
 
 async def delete_prescription_controller(user_email: str, prescription_id: str):
     db = get_database()
@@ -338,8 +394,19 @@ async def delete_prescription_controller(user_email: str, prescription_id: str):
         
     if prescription.get("user_email") != user_email:
         raise HTTPException(status_code=403, detail="Not authorized to delete this prescription")
-        
-    result = await db.prescriptions.delete_one({"_id": obj_id})
+
+    try:
+        if prescription.get("stored_filename") or prescription.get("local_path"):
+            safe_path = resolve_safe_upload_path(
+                "prescriptions",
+                stored_filename=prescription.get("stored_filename"),
+                local_path=prescription.get("local_path"),
+            )
+            os.remove(safe_path)
+    except Exception:
+        pass
+
+    result = await db.prescriptions.delete_one({"_id": obj_id, "user_email": user_email})
     if result.deleted_count == 0:
         raise HTTPException(status_code=500, detail="Failed to delete prescription")
         

@@ -212,10 +212,10 @@ export default function AIAssistant() {
   };
 
   const healthStats = [
-    { label: 'Heart Rate', value: `${metrics?.heartRate?.current || 72} bpm`, icon: Heart, color: 'text-rose-500', bg: 'bg-rose-500/10' },
-    { label: 'Blood Pressure', value: `${metrics?.bloodPressure?.systolic || 120}/${metrics?.bloodPressure?.diastolic || 80}`, icon: Activity, color: 'text-primary-500', bg: 'bg-primary-500/10' },
-    { label: 'Sleep', value: `${metrics?.sleep?.hours || 7.5} hrs`, icon: Moon, color: 'text-violet-500', bg: 'bg-violet-500/10' },
-    { label: 'Medications', value: '3 Active', icon: Pill, color: 'text-accent-500', bg: 'bg-accent-500/10' },
+    { label: 'Heart Rate', value: metrics?.heartRate?.current ? `${metrics.heartRate.current} bpm` : 'Not recorded', icon: Heart, color: 'text-rose-500', bg: 'bg-rose-500/10' },
+    { label: 'Blood Pressure', value: metrics?.bloodPressure?.systolic ? `${metrics.bloodPressure.systolic}/${metrics.bloodPressure.diastolic} mmHg` : 'Not recorded', icon: Activity, color: 'text-primary-500', bg: 'bg-primary-500/10' },
+    { label: 'Sleep', value: metrics?.sleep?.hours ? `${metrics.sleep.hours} hrs` : 'Not recorded', icon: Moon, color: 'text-violet-500', bg: 'bg-violet-500/10' },
+    { label: 'BMI', value: metrics?.bmi?.value ? `${metrics.bmi.value} (${metrics.bmi.category})` : 'Not provided', icon: Pill, color: 'text-accent-500', bg: 'bg-accent-500/10' },
   ];
 
   return (

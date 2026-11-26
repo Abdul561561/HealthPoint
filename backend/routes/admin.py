@@ -64,10 +64,8 @@ class ReportAdminUpdate(BaseModel):
 # ────────────────────────────────────────────────────────────────────────────
 
 async def check_admin_user(current_user: dict = Depends(get_current_user)):
-    # Support mock account alex.johnson@email.com, admin@healthpoint.com or users with "admin" role
-    email = current_user.get("email", "").lower()
-    role = current_user.get("role", "patient").lower()
-    if role != "admin" and email not in ["alex.johnson@email.com", "admin@healthpoint.com", "admin@email.com"]:
+    role = (current_user.get("role") or "patient").strip().lower()
+    if role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Admin permissions required."
@@ -87,27 +85,10 @@ FALLBACK_MEDICINES = [
 ]
 
 async def ensure_collections_seeded(db):
-    # Ensure medicines are seeded
+    # Ensure medicines catalog is seeded if empty (no fake patient records/orders)
     meds_count = await db.medicines.count_documents({})
     if meds_count == 0:
         await db.medicines.insert_many(FALLBACK_MEDICINES)
-        
-    # Ensure some appointments are seeded globally for the admin view
-    appt_count = await db.appointments.count_documents({})
-    if appt_count == 0:
-        await db.appointments.insert_many([
-            {"user_email": "alex.johnson@email.com", "doctor": "Dr. Sarah Mitchell", "specialty": "Cardiology", "date": "2026-06-08", "time": "2:30 PM", "type": "In-Person", "status": "confirmed", "hospital": "City Heart Center"},
-            {"user_email": "patient@email.com", "doctor": "Dr. Priya Patel", "specialty": "Pediatrics", "date": "2026-06-10", "time": "11:00 AM", "type": "Video Call", "status": "pending", "hospital": "Children's Health Hub"}
-        ])
-
-    # Ensure some orders are seeded globally for revenue dashboard
-    orders_count = await db.orders.count_documents({})
-    if orders_count == 0:
-        await db.orders.insert_many([
-            {"user_email": "alex.johnson@email.com", "totalPrice": 450.0, "paymentMethod": "UPI", "status": "Delivered", "date": "2026-06-02 14:20", "items": [{"name": "Atorvastatin 10mg", "price": 450.0, "quantity": 1}]},
-            {"user_email": "patient@email.com", "totalPrice": 180.0, "paymentMethod": "Card", "status": "Delivered", "date": "2026-06-05 10:15", "items": [{"name": "Amoxicillin 500mg", "price": 180.0, "quantity": 1}]},
-            {"user_email": "alex.johnson@email.com", "totalPrice": 120.0, "paymentMethod": "UPI", "status": "Processing", "date": "2026-06-06 18:45", "items": [{"name": "Vitamin C 1000mg", "price": 120.0, "quantity": 1}]}
-        ])
 
 # ────────────────────────────────────────────────────────────────────────────
 # Admin Dashboard Analytics API
@@ -185,19 +166,17 @@ async def get_admin_dashboard_stats():
 
 @router.get("/users", response_model=List[Any], dependencies=[Depends(check_admin_user)])
 async def list_admin_users():
+    from auth.jwt_handler import sanitize_user_document
     db = get_database()
     cursor = db.users.find({})
     users = []
     async for u in cursor:
-        u["id"] = str(u["_id"])
-        del u["_id"]
-        if "password_hash" in u:
-            del u["password_hash"]
-        users.append(u)
+        users.append(sanitize_user_document(u))
     return users
 
 @router.put("/users/{user_id}", dependencies=[Depends(check_admin_user)])
 async def update_admin_user(user_id: str, data: UserAdminUpdate):
+    from auth.jwt_handler import sanitize_user_document
     db = get_database()
     try:
         obj_id = ObjectId(user_id)
@@ -212,11 +191,7 @@ async def update_admin_user(user_id: str, data: UserAdminUpdate):
     if not updated:
         raise HTTPException(status_code=404, detail="User not found")
         
-    updated["id"] = str(updated["_id"])
-    del updated["_id"]
-    if "password_hash" in updated:
-        del updated["password_hash"]
-    return updated
+    return sanitize_user_document(updated)
 
 @router.delete("/users/{user_id}", dependencies=[Depends(check_admin_user)])
 async def delete_admin_user(user_id: str):

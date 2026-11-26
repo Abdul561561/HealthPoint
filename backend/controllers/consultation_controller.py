@@ -4,14 +4,14 @@ from bson import ObjectId
 from database.mongodb import get_database
 from models.consultation import ClinicalNoteCreate
 
+
 async def get_video_appointments(user_email: str):
     db = get_database()
     if db is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database connection unavailable"
+            detail="Database connection unavailable",
         )
-    # Find all appointments for the user that are video calls
     cursor = db.appointments.find({"user_email": user_email, "type": "Video Call"})
     appts = []
     async for appt in cursor:
@@ -20,84 +20,102 @@ async def get_video_appointments(user_email: str):
         appts.append(appt)
     return appts
 
-async def get_jitsi_room_config(appt_id: str, user_email: str):
+
+async def get_jitsi_room_config(appt_id: str, current_user: dict):
     db = get_database()
     if db is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database connection unavailable"
+            detail="Database connection unavailable",
         )
-    
+
+    user_email = current_user.get("email", "").lower().strip()
+    role = (current_user.get("role") or "patient").lower().strip()
+    display_name = current_user.get("name", "HealthPoint User")
+
     try:
         obj_id = ObjectId(appt_id)
-        appt = await db.appointments.find_one({"_id": obj_id})
     except Exception:
-        # Fallback for custom room IDs typed directly
-        appt = None
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid appointment ID format")
 
-    user = await db.users.find_one({"email": user_email})
-    display_name = user.get("name", "Patient") if user else "HealthPoint User"
+    appt = await db.appointments.find_one({"_id": obj_id})
+    if not appt:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Consultation appointment not found")
 
-    if appt:
-        # Check user role based on name or email. If joining user matches patient email, they are patient, otherwise doctor
-        is_doctor = appt.get("user_email") != user_email
-        doctor_name = appt.get("doctor", "Dr. Mitchell")
-        patient_name = display_name if not is_doctor else "Patient"
-        
-        return {
-            "roomName": f"HealthPoint-Appointment-{appt_id}",
-            "displayName": display_name,
-            "subject": f"{appt.get('specialty', 'General')} Consultation",
-            "isDoctor": is_doctor,
-            "doctorName": doctor_name,
-            "patientName": patient_name,
-            "patientEmail": appt.get("user_email")
-        }
-    else:
-        # Custom meeting code fallback
-        return {
-            "roomName": f"HealthPoint-Room-{appt_id}",
-            "displayName": display_name,
-            "subject": "Direct Video Consult",
-            "isDoctor": False,
-            "doctorName": "Consultant Doctor",
-            "patientName": display_name,
-            "patientEmail": user_email
-        }
+    appt_owner = (appt.get("user_email") or "").lower().strip()
+    if appt_owner != user_email and role not in {"doctor", "admin"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to join another patient's consultation room",
+        )
 
-async def save_clinical_note_controller(doctor_email: str, note_data: ClinicalNoteCreate):
+    is_doctor = role == "doctor" and appt_owner != user_email
+    doctor_name = appt.get("doctor", "Assigned Doctor")
+    patient_name = display_name if not is_doctor else "Patient"
+
+    return {
+        "roomName": f"HealthPoint-Appointment-{appt_id}",
+        "displayName": display_name,
+        "subject": f"{appt.get('specialty', 'General')} Consultation",
+        "isDoctor": is_doctor,
+        "doctorName": doctor_name,
+        "patientName": patient_name,
+        "patientEmail": appt_owner,
+    }
+
+
+async def save_clinical_note_controller(current_user: dict, note_data: ClinicalNoteCreate):
     db = get_database()
     if db is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database connection unavailable"
+            detail="Database connection unavailable",
         )
-        
-    date_str = datetime.datetime.now().strftime("%Y-%m-%d")
-    time_str = datetime.datetime.now().strftime("%I:%M %p")
-    
+
+    user_email = current_user.get("email", "").lower().strip()
+    role = (current_user.get("role") or "patient").lower().strip()
+    target_patient = note_data.patientEmail.lower().strip()
+
+    if target_patient != user_email and role not in {"doctor", "admin"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to write clinical notes for another user",
+        )
+
+    if note_data.appointmentId:
+        try:
+            appt_obj_id = ObjectId(note_data.appointmentId)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid appointment ID format")
+        appt = await db.appointments.find_one({"_id": appt_obj_id})
+        if not appt:
+            raise HTTPException(status_code=404, detail="Appointment not found")
+        if appt.get("user_email", "").lower().strip() != target_patient:
+            raise HTTPException(status_code=403, detail="Appointment does not belong to target patient")
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    date_str = now.strftime("%Y-%m-%d")
+    time_str = now.strftime("%I:%M %p")
+
     note_doc = {
         "appointmentId": note_data.appointmentId,
-        "patientEmail": note_data.patientEmail,
+        "patientEmail": target_patient,
         "patientName": note_data.patientName,
         "doctorName": note_data.doctorName,
         "symptoms": note_data.symptoms,
         "diagnosis": note_data.diagnosis,
         "prescription": note_data.prescription,
-        "notes": note_data.notes,
+        "notes": note_data.notes or "",
         "date": date_str,
-        "time": time_str
+        "time": time_str,
     }
-    
-    # Insert clinical note
+
     result = await db.clinical_notes.insert_one(note_doc)
-    note_id = str(result.inserted_id)
-    note_doc["id"] = note_id
+    note_doc["id"] = str(result.inserted_id)
     del note_doc["_id"]
-    
-    # Automatically add to Patient's medical records
+
     record_doc = {
-        "user_email": note_data.patientEmail,
+        "user_email": target_patient,
         "title": f"Consultation Summary - {note_data.doctorName}",
         "type": "Consultation Notes",
         "date": date_str,
@@ -105,41 +123,37 @@ async def save_clinical_note_controller(doctor_email: str, note_data: ClinicalNo
         "hospital": "HealthPoint Virtual Care",
         "status": "normal",
         "category": "Doctor Note",
-        "fileSize": "480 KB",
+        "fileSize": "Generated Note",
         "diagnosis": note_data.diagnosis,
         "prescription": note_data.prescription,
         "symptoms": note_data.symptoms,
-        "clinicalNotes": note_data.notes
+        "clinicalNotes": note_data.notes or "",
     }
     await db.records.insert_one(record_doc)
-    
-    # Optionally update appointment status to completed
-    try:
-        appt_obj_id = ObjectId(note_data.appointmentId)
+
+    if note_data.appointmentId:
         await db.appointments.update_one(
-            {"_id": appt_obj_id},
-            {"$set": {"status": "completed"}}
+            {"_id": ObjectId(note_data.appointmentId), "user_email": target_patient},
+            {"$set": {"status": "completed"}},
         )
-    except Exception:
-        pass
-        
+
     return note_doc
+
 
 async def fetch_patient_notes_controller(patient_email: str):
     db = get_database()
     if db is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database connection unavailable"
+            detail="Database connection unavailable",
         )
-    
-    cursor = db.clinical_notes.find({"patientEmail": patient_email})
+
+    cursor = db.clinical_notes.find({"patientEmail": patient_email.lower().strip()})
     notes = []
     async for note in cursor:
         note["id"] = str(note["_id"])
         del note["_id"]
         notes.append(note)
-    
-    # Sort notes by date descending
+
     notes.sort(key=lambda x: x.get("date", ""), reverse=True)
     return notes

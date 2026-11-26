@@ -13,30 +13,48 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 export default function BloodPressureChart({ height = 200 }) {
   const { isDark } = useTheme();
   const { metrics } = useSelector((state) => state.health);
-  
-  const systolic = metrics?.bloodPressure?.systolic || 120;
-  const diastolic = metrics?.bloodPressure?.diastolic || 80;
+
+  const history = (metrics?.history?.bloodPressure || []).filter(
+    e => typeof e?.systolic === 'number' && e.systolic > 0 && typeof e?.diastolic === 'number' && e.diastolic > 0
+  );
+  const points = history.length > 0
+    ? history
+    : (typeof metrics?.bloodPressure?.systolic === 'number' && metrics.bloodPressure.systolic > 0
+        ? [{ systolic: metrics.bloodPressure.systolic, diastolic: metrics.bloodPressure.diastolic, recordedAt: null }]
+        : []);
+
+  if (points.length === 0) {
+    return (
+      <div style={{ height }} className="flex items-center justify-center text-xs text-slate-400 border border-dashed border-slate-200 dark:border-white/10 rounded-xl">
+        No blood pressure readings recorded yet
+      </div>
+    );
+  }
+
+  const labels = points.map((p, idx) =>
+    p.recordedAt ? new Date(p.recordedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : `Entry ${idx + 1}`
+  );
 
   const data = {
-    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+    labels,
     datasets: [
       {
         label: 'Systolic',
-        data: [systolic - 2, systolic + 1, systolic - 3, systolic + 2, systolic - 1, systolic + 1, systolic],
+        data: points.map(p => p.systolic),
         borderColor: '#6366f1',
         backgroundColor: 'rgba(99, 102, 241, 0.1)',
-        tension: 0.4,
+        tension: 0.35,
         fill: true,
       },
       {
         label: 'Diastolic',
-        data: [diastolic - 1, diastolic + 2, diastolic - 2, diastolic + 1, diastolic - 1, diastolic, diastolic],
+        data: points.map(p => p.diastolic),
         borderColor: '#06b6d4',
         backgroundColor: 'rgba(6, 182, 212, 0.1)',
-        tension: 0.4,
+        tension: 0.35,
         fill: true,
-      }
-    ]
+      },
+    ],
   };
 
   const options = {
@@ -45,8 +63,8 @@ export default function BloodPressureChart({ height = 200 }) {
       ...defaultChartOptions(isDark).scales,
       y: {
         ...defaultChartOptions(isDark).scales.y,
-        min: 60,
-        max: 140,
+        suggestedMin: 55,
+        suggestedMax: 150,
         ticks: { ...defaultChartOptions(isDark).scales.y.ticks, callback: (v) => `${v}` },
       },
     },

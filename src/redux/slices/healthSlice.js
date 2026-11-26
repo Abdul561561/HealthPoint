@@ -125,16 +125,17 @@ export const updateHealthMetric = createAsyncThunk(
 
 const initialState = {
   metrics: {
-    heartRate: { current: 0, min: 60, max: 100, unit: 'bpm', status: 'normal' },
-    bloodPressure: { systolic: 0, diastolic: 0, unit: 'mmHg', status: 'normal' },
-    sleep: { hours: 0.0, quality: 'N/A', target: 8, unit: 'hrs' },
-    calories: { burned: 0, intake: 0, target: 2000, unit: 'kcal' },
-    steps: { count: 0, target: 10000, unit: 'steps' },
-    water: { intake: 0, target: 8, unit: 'glasses' },
-    weight: { current: 0.0, previous: 0.0, unit: 'kg' },
-    bmi: { value: 0.0, category: 'Normal' },
-    oxygen: { level: 0, unit: '%', status: 'normal' },
-    temperature: { value: 0.0, unit: '°F', status: 'normal' },
+    heartRate: { current: null, min: 60, max: 100, unit: 'bpm', status: 'not_recorded' },
+    bloodPressure: { systolic: null, diastolic: null, unit: 'mmHg', status: 'not_recorded' },
+    sleep: { hours: null, quality: 'Not provided', target: 8, unit: 'hrs' },
+    calories: { burned: null, intake: null, target: null, unit: 'kcal' },
+    steps: { count: null, target: null, unit: 'steps' },
+    water: { intake: null, target: null, unit: 'glasses' },
+    weight: { current: null, previous: null, unit: 'kg' },
+    bmi: { value: null, category: 'Not provided' },
+    oxygen: { level: null, unit: '%', status: 'not_recorded' },
+    temperature: { value: null, unit: '°F', status: 'not_recorded' },
+    history: {},
   },
   appointments: [],
   records: [],
@@ -197,8 +198,7 @@ const healthSlice = createSlice({
       // Log Workout
       .addCase(logFitnessWorkout.fulfilled, (state, action) => {
         state.workouts.unshift(action.payload);
-        // Add calories burned
-        state.metrics.calories.burned += action.payload.calories;
+        state.metrics.calories.burned = (state.metrics.calories.burned || 0) + (action.payload.calories || 0);
       })
       
       // Update Hydration

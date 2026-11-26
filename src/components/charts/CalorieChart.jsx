@@ -12,22 +12,45 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
 export default function CalorieChart({ height = 200 }) {
   const { isDark } = useTheme();
-  const { metrics } = useSelector((state) => state.health);
-  
-  const burned = metrics?.calories?.burned || 1840;
+  const { metrics, workouts = [] } = useSelector((state) => state.health);
+
+  const workoutPoints = workouts.filter(w => typeof w?.calories === 'number' && w.calories > 0);
+  const history = (metrics?.history?.calories || []).filter(e => typeof e?.burned === 'number' && e.burned > 0);
+
+  let labels = [];
+  let values = [];
+  if (workoutPoints.length > 0) {
+    labels = workoutPoints.slice(0, 7).reverse().map(w => w.date || w.name);
+    values = workoutPoints.slice(0, 7).reverse().map(w => w.calories);
+  } else if (history.length > 0) {
+    labels = history.map((h, idx) =>
+      h.recordedAt ? new Date(h.recordedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : `Entry ${idx + 1}`
+    );
+    values = history.map(h => h.burned);
+  } else if (typeof metrics?.calories?.burned === 'number' && metrics.calories.burned > 0) {
+    labels = ['Recorded'];
+    values = [metrics.calories.burned];
+  }
+
+  if (values.length === 0) {
+    return (
+      <div style={{ height }} className="flex items-center justify-center text-xs text-slate-400 border border-dashed border-slate-200 dark:border-white/10 rounded-xl">
+        No calorie burn data recorded yet
+      </div>
+    );
+  }
 
   const data = {
-    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+    labels,
     datasets: [
       {
         label: 'Calories Burned',
-        data: [burned - 90, burned + 80, burned, burned + 260, burned - 160, burned + 360, burned],
+        data: values,
         borderColor: '#f59e0b',
-        backgroundColor: 'rgba(245, 158, 11, 0.1)',
-        tension: 0.4,
-        fill: true,
-      }
-    ]
+        backgroundColor: 'rgba(245, 158, 11, 0.35)',
+        borderRadius: 6,
+      },
+    ],
   };
 
   const options = {

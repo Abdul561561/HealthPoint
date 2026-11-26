@@ -45,7 +45,7 @@ OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/ap
 DEFAULT_MODEL = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
 DEFAULT_FALLBACKS = os.getenv(
     "OPENROUTER_FALLBACK_MODELS",
-    "google/gemini-2.0-flash-exp:free,mistralai/mistral-small-3.1-24b-instruct:free,meta-llama/llama-3.1-8b-instruct:free,qwen/qwen-2.5-72b-instruct:free"
+    "mistralai/mistral-small-3.1-24b-instruct:free,meta-llama/llama-3.1-8b-instruct:free,qwen/qwen-2.5-72b-instruct:free"
 )
 
 try:
@@ -58,12 +58,9 @@ try:
 except ValueError:
     AI_MAX_RETRIES = 2
 
-# Models known to support multimodal image input
+# Non-Gemini free vision model
 VISION_MODELS = {
-    "google/gemini-2.0-flash-exp:free",
-    "google/gemini-2.0-flash-thinking-exp:free",
     "meta-llama/llama-3.2-11b-vision-instruct:free",
-    "google/gemini-flash-1.5-exp:free",
 }
 
 def get_api_key() -> str:
@@ -85,8 +82,25 @@ def get_configured_models() -> List[str]:
     return models
 
 def is_free_model(model_id: str) -> bool:
-    """Check if a model identifier represents an explicit free tier model."""
-    return ":free" in model_id.lower()
+    """Check if a model identifier strictly ends with ':free' and is not a Gemini model."""
+    cleaned = (model_id or "").strip().lower()
+    return bool(cleaned.endswith(":free") and "gemini" not in cleaned)
+
+
+def validate_free_models(models: List[str]) -> None:
+    """Reject any model that does not end with ':free' or references Google Gemini."""
+    for m in models:
+        cleaned = (m or "").strip().lower()
+        if "gemini" in cleaned:
+            raise LLMServiceException(
+                f"Rejected model '{m}': Google Gemini models are disallowed on HealthPoint.",
+                status_code=400,
+            )
+        if not cleaned.endswith(":free"):
+            raise LLMServiceException(
+                f"Rejected model '{m}': HealthPoint permits only OpenRouter free models ending with ':free'.",
+                status_code=400,
+            )
 
 def mask_key(key: str) -> str:
     """Safely redact API key for logging purposes."""
@@ -132,6 +146,8 @@ class LLMService:
             "api_key_masked": mask_key(api_key),
             "primary_model": models[0] if models else None,
             "fallback_models": models[1:] if len(models) > 1 else [],
+            "free_models_only_enforced": True,
+            "all_configured_models_free": all(is_free_model(m) for m in models),
             "last_working_model": self._last_working_model,
             "last_error": self._last_error,
             "status": "healthy" if api_key else "missing_api_key"
@@ -164,14 +180,18 @@ class LLMService:
 
         # Build candidate models list
         if override_model:
-            candidate_models = [override_model]
+            candidate_models = [override_model.strip()]
         else:
             candidate_models = get_configured_models()
 
-        # Enforce free model rule if candidate is free
-        for m in candidate_models:
-            if not is_free_model(m):
-                logger.warning(f"Configured model '{m}' does not contain ':free'. Ensuring only explicit models run.")
+        if not candidate_models:
+            raise LLMServiceException(
+                "No OpenRouter models are configured on the backend.",
+                status_code=500,
+            )
+
+        # Strictly reject any non-free model (never allow paid models)
+        validate_free_models(candidate_models)
 
         # Build payload messages
         formatted_messages: List[Dict[str, Any]] = []

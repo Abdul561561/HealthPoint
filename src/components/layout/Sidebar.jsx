@@ -35,9 +35,8 @@ export default function Sidebar() {
   const { sidebarOpen, sidebarCollapsed } = useSelector((s) => s.ui);
   const { user } = useAuth();
 
-  const email = user?.email?.toLowerCase() || "";
   const role = user?.role?.toLowerCase() || "";
-  const isAdmin = role === 'admin' || email === 'alex.johnson@email.com' || email.includes('admin') || email.includes('khader');
+  const isAdmin = role === 'admin';
 
   const visibleNavItems = [
     { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },

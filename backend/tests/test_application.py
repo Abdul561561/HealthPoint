@@ -1,3 +1,4 @@
+from unittest.mock import patch
 import pytest
 import datetime
 from bson import ObjectId
@@ -73,13 +74,18 @@ async def _clean_test_user_data(db, email):
     await db.claimRequests.delete_many({"user_email": email})
     await db.emergencies.delete_many({"user_email": email})
 
-# 29. User direct registration (no OTP) and login flow test
+# 29. User OTP registration, verification, and login flow test
 async def test_29_user_registration_and_login_flow():
     db = get_database()
     if db is None:
         pytest.skip("Database connection not available")
 
     await _clean_test_user_data(db, TEST_USER_EMAIL)
+
+    captured = {}
+
+    async def mock_send_otp(to_email, name, otp_code):
+        captured["otp"] = otp_code
 
     reg_data = UserRegister(
         name="Integration Test User",
@@ -92,23 +98,34 @@ async def test_29_user_registration_and_login_flow():
         weight="70 kg",
         bloodGroup="O+"
     )
-    reg_res = await register_user_controller(reg_data)
-    # Direct signup returns success and access token immediately without requiring OTP
-    assert reg_res["status"] == "success"
-    assert "access_token" in reg_res or "token" in reg_res
-    assert reg_res["user"]["email"] == TEST_USER_EMAIL
+    with patch("controllers.auth_controller.send_otp_email", side_effect=mock_send_otp):
+        reg_res = await register_user_controller(reg_data)
 
-    # Verify user saved in DB with hashed password and is_verified == True
+    # Registration requires OTP verification and must NOT issue JWT immediately
+    assert reg_res["status"] == "verification_required"
+    assert "access_token" not in reg_res
+    assert reg_res["email"] == TEST_USER_EMAIL
+
+    # Verify user saved in DB as unverified with hashed password
     user_doc = await db.users.find_one({"email": TEST_USER_EMAIL})
     assert user_doc is not None
     assert user_doc["password_hash"] != TEST_PASSWORD
     assert verify_password(TEST_PASSWORD, user_doc["password_hash"])
-    assert user_doc.get("is_verified") is True
+    assert user_doc.get("is_verified") is False
 
-    # Test login with correct password immediately (no OTP gate)
+    # Unverified login must be rejected
+    with pytest.raises(HTTPException) as unv_exc:
+        await login_user_controller(UserLogin(email=TEST_USER_EMAIL, password=TEST_PASSWORD))
+    assert unv_exc.value.status_code == 403
+
+    # Verify OTP
+    verify_res = await verify_user_controller(VerifyRequest(email=TEST_USER_EMAIL, otp=captured["otp"]))
+    assert verify_res["status"] == "verified"
+
+    # Test login after verification
     login_data = UserLogin(email=TEST_USER_EMAIL, password=TEST_PASSWORD)
     login_res = await login_user_controller(login_data)
-    assert "access_token" in login_res or "token" in login_res
+    assert "access_token" in login_res
     assert login_res["user"]["email"] == TEST_USER_EMAIL
 
     # Test login with wrong password (must reject with 400 or 401)
@@ -353,9 +370,22 @@ async def test_38_health_analytics_metrics_calculation():
     if db is None:
         pytest.skip("Database connection not available")
 
-    # Query analytics dashboard
+    # Seed realistic metrics so analytics computes a real score without fabricated defaults
+    await db.metrics.update_one(
+        {"user_email": TEST_USER_EMAIL},
+        {"$set": {
+            "heartRate": {"current": 72},
+            "bloodPressure": {"systolic": 120, "diastolic": 80},
+            "sleep": {"hours": 7.5},
+            "steps": {"count": 9200},
+            "bmi": {"value": 22.9, "category": "Normal"},
+        }},
+        upsert=True,
+    )
+
     analytics = await get_analytics_dashboard_controller(TEST_USER_EMAIL)
     assert analytics is not None
+    assert analytics.scoreBreakdown.totalScore is not None
     assert analytics.scoreBreakdown.totalScore > 0
     assert len(analytics.riskPredictions) > 0
     assert analytics.weeklyReport.summary is not None

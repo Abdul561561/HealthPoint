@@ -1,33 +1,39 @@
 from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
+
 
 class HealthScoreBreakdown(BaseModel):
-    totalScore: int
-    sleepScore: int
-    activityScore: int
-    heartScore: int
-    bpScore: int
-    bmiScore: int
-    grade: str # e.g. "Optimal", "Good", "Needs Attention"
+    totalScore: Optional[int] = None
+    sleepScore: Optional[int] = None
+    activityScore: Optional[int] = None
+    heartScore: Optional[int] = None
+    bpScore: Optional[int] = None
+    bmiScore: Optional[int] = None
+    grade: str
+    dataAvailable: bool = False
+    missingFields: List[str] = []
+
 
 class RiskPredictionCard(BaseModel):
-    name: str # e.g. "Cardiovascular Health", "Type 2 Diabetes", "Sleep Fatigue"
-    probability: float # percentage e.g. 12.5
-    level: str # "Low", "Medium", "High"
-    color: str # "green", "yellow", "red"
-    factors: List[str] # contributing parameters
-    recommendations: List[str] # preventive clinical advice
+    name: str
+    probability: Optional[float] = None
+    level: str
+    color: str
+    factors: List[str]
+    recommendations: List[str]
+
 
 class WeeklyReportResponse(BaseModel):
     summary: str
-    sleepAvg: float
-    sleepDiff: float # percentage change e.g. +12.4
-    stepsAvg: float
-    stepsDiff: float
-    caloriesAvg: float
-    caloriesDiff: float
-    hrAvg: float
-    hrDiff: float
+    sleepAvg: Optional[float] = None
+    sleepDiff: Optional[float] = None
+    stepsAvg: Optional[float] = None
+    stepsDiff: Optional[float] = None
+    caloriesAvg: Optional[float] = None
+    caloriesDiff: Optional[float] = None
+    hrAvg: Optional[float] = None
+    hrDiff: Optional[float] = None
+
 
 class AnalyticsDashboardResponse(BaseModel):
     scoreBreakdown: HealthScoreBreakdown

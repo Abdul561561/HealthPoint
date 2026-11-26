@@ -4,16 +4,7 @@ const initialState = {
   sidebarOpen: true,
   sidebarCollapsed: false,
   activeModal: null,
-  notifications: [
-    { id: 1, title: 'Emergency Alert', message: 'Heat wave warning in Bengaluru. Stay hydrated!', read: false, time: '10:15 AM', type: 'emergency', dateGroup: 'Today' },
-    { id: 2, title: 'Medicine Reminder', message: 'Take Pantocid 40mg before breakfast', read: false, time: '8:00 AM', type: 'medication', dateGroup: 'Today' },
-    { id: 3, title: 'Appointment Tomorrow', message: 'Dr. Sagar Ithape — Tomorrow 2:30 PM', read: false, time: '4:00 PM', type: 'appointment', dateGroup: 'Today' },
-    { id: 4, title: 'Health Score Increased', message: 'Excellent! Your Index Health Score increased by +4.2% this week.', read: true, time: 'Yesterday, 9:00 AM', type: 'tip', dateGroup: 'Yesterday' },
-    { id: 5, title: 'Workout Completed', message: 'Leg Day completed: 180 kcal burned in 30 mins', read: true, time: 'Yesterday, 6:30 PM', type: 'tip', dateGroup: 'Yesterday' },
-    { id: 6, title: 'Prescription Analysed', message: 'Gemini successfully completed prescription scan analysis.', read: true, time: '2 days ago', type: 'tip', dateGroup: 'Older' },
-    { id: 7, title: 'Water Reminder', message: 'Remember to log your water intake. 4 glasses remaining.', read: true, time: '3 days ago', type: 'tip', dateGroup: 'Older' },
-    { id: 8, title: 'Insurance Update', message: 'HealthShield Individual Prime document verification completed.', read: true, time: '4 days ago', type: 'tip', dateGroup: 'Older' },
-  ],
+  notifications: [],
   cart: [],
   toasts: [],
 };

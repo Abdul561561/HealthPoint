@@ -65,7 +65,7 @@ export default function Timeline() {
         icon: FileText,
         color: 'text-cyan-500 bg-cyan-500/10 border-cyan-500/20',
         borderColor: 'border-cyan-500/30',
-        details: `Category: ${r.category} · Doctor: ${r.doctor || 'Dr. Mitchell'}`,
+        details: `Category: ${r.category} · Doctor: ${r.doctor || 'Not provided'}`,
         status: r.status,
       });
     });
@@ -81,7 +81,7 @@ export default function Timeline() {
         icon: Activity,
         color: 'text-rose-500 bg-rose-500/10 border-rose-500/20',
         borderColor: 'border-rose-500/30',
-        details: `Heart Rate: ${metrics.heartRate.current} bpm · Blood Pressure: ${metrics.bloodPressure?.systolic || 120}/${metrics.bloodPressure?.diastolic || 80} mmHg`,
+        details: `Heart Rate: ${metrics.heartRate.current} bpm · Blood Pressure: ${metrics.bloodPressure?.systolic ? `${metrics.bloodPressure.systolic}/${metrics.bloodPressure.diastolic} mmHg` : 'Not recorded'}`,
       });
     }
 

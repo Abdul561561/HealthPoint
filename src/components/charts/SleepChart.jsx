@@ -13,31 +13,47 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 export default function SleepChart({ height = 200 }) {
   const { isDark } = useTheme();
   const { metrics } = useSelector((state) => state.health);
-  
-  const sleepHrs = metrics?.sleep?.hours || 7.5;
+
+  const history = (metrics?.history?.sleep || []).filter(e => typeof e?.hours === 'number' && e.hours > 0);
+  const points = history.length > 0
+    ? history
+    : (typeof metrics?.sleep?.hours === 'number' && metrics.sleep.hours > 0
+        ? [{ hours: metrics.sleep.hours, recordedAt: null }]
+        : []);
+
+  if (points.length === 0) {
+    return (
+      <div style={{ height }} className="flex items-center justify-center text-xs text-slate-400 border border-dashed border-slate-200 dark:border-white/10 rounded-xl">
+        No sleep logs recorded yet
+      </div>
+    );
+  }
+
+  const labels = points.map((p, idx) =>
+    p.recordedAt ? new Date(p.recordedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : `Entry ${idx + 1}`
+  );
 
   const data = {
-    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+    labels,
     datasets: [
       {
-        label: 'Sleep Quality',
-        data: [sleepHrs, sleepHrs + 0.5, sleepHrs - 1.0, sleepHrs - 0.5, sleepHrs + 0.3, sleepHrs + 0.7, sleepHrs + 0.1],
+        label: 'Sleep Duration',
+        data: points.map(p => p.hours),
         borderColor: '#8b5cf6',
-        backgroundColor: 'rgba(139, 92, 246, 0.1)',
-        tension: 0.4,
-        fill: true,
-      }
-    ]
+        backgroundColor: 'rgba(139, 92, 246, 0.35)',
+        borderRadius: 6,
+      },
+    ],
   };
 
   const options = {
     ...defaultChartOptions(isDark),
     scales: {
       ...defaultChartOptions(isDark).scales,
-      x: { ...defaultChartOptions(isDark).scales.x, stacked: true },
       y: {
         ...defaultChartOptions(isDark).scales.y,
-        stacked: true,
+        suggestedMin: 0,
+        suggestedMax: 10,
         ticks: { ...defaultChartOptions(isDark).scales.y.ticks, callback: (v) => `${v}h` },
       },
     },

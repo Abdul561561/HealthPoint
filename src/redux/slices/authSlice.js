@@ -1,7 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import api from '../../services/api';
 
-// Async Thunks for API calls
 export const loginUser = createAsyncThunk(
   'auth/loginUser',
   async (credentials, { rejectWithValue }) => {
@@ -12,22 +11,11 @@ export const loginUser = createAsyncThunk(
       return user;
     } catch (err) {
       const detail = err.response?.data?.detail;
-      return rejectWithValue(detail || 'Login failed');
-    }
-  }
-);
-
-export const loginSocialUser = createAsyncThunk(
-  'auth/loginSocialUser',
-  async (socialData, { rejectWithValue }) => {
-    try {
-      const response = await api.post('/auth/social-login', socialData);
-      const { access_token, user } = response.data;
-      localStorage.setItem('hp-token', access_token);
-      return user;
-    } catch (err) {
-      const message = err.response?.data?.detail || 'Social Login failed';
-      return rejectWithValue(message);
+      return rejectWithValue({
+        message: detail || 'Login failed',
+        status: err.response?.status,
+        email: credentials.email,
+      });
     }
   }
 );
@@ -37,10 +25,6 @@ export const registerUser = createAsyncThunk(
   async (userData, { rejectWithValue }) => {
     try {
       const response = await api.post('/auth/register', userData);
-      const { access_token, user } = response.data;
-      if (access_token) {
-        localStorage.setItem('hp-token', access_token);
-      }
       return response.data;
     } catch (err) {
       const message = err.response?.data?.detail || 'Registration failed';
@@ -54,11 +38,22 @@ export const verifyUserEmail = createAsyncThunk(
   async ({ email, otp }, { rejectWithValue }) => {
     try {
       const response = await api.post('/auth/verify', { email, otp });
-      const { access_token, user } = response.data;
-      localStorage.setItem('hp-token', access_token);
-      return user;
+      return response.data;
     } catch (err) {
       const message = err.response?.data?.detail || 'Verification failed';
+      return rejectWithValue(message);
+    }
+  }
+);
+
+export const resendVerificationOtp = createAsyncThunk(
+  'auth/resendVerificationOtp',
+  async ({ email }, { rejectWithValue }) => {
+    try {
+      const response = await api.post('/auth/resend-otp', { email });
+      return response.data;
+    } catch (err) {
+      const message = err.response?.data?.detail || 'Could not resend verification code';
       return rejectWithValue(message);
     }
   }
@@ -119,7 +114,7 @@ const authSlice = createSlice({
     setVerificationRequired: (state, action) => {
       state.verificationRequired = action.payload.required;
       state.unverifiedEmail = action.payload.email;
-    }
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -137,52 +132,43 @@ const authSlice = createSlice({
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.loading = false;
-        state.error = typeof action.payload === 'string' ? action.payload : 'Login failed';
+        const payload = action.payload;
+        if (payload && typeof payload === 'object') {
+          state.error = payload.message || 'Login failed';
+          if (payload.status === 403 && payload.email) {
+            state.verificationRequired = true;
+            state.unverifiedEmail = payload.email;
+          }
+        } else {
+          state.error = typeof payload === 'string' ? payload : 'Login failed';
+        }
       })
-      
-      // Social Login
-      .addCase(loginSocialUser.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
-      .addCase(loginSocialUser.fulfilled, (state, action) => {
-        state.loading = false;
-        state.isAuthenticated = true;
-        state.user = action.payload;
-        state.verificationRequired = false;
-        state.unverifiedEmail = null;
-      })
-      .addCase(loginSocialUser.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload;
-      })
-      
-      // Register
+
+      // Register (Account remains unverified until OTP is confirmed; no JWT issued)
       .addCase(registerUser.pending, (state) => {
         state.loading = true;
         state.error = null;
       })
       .addCase(registerUser.fulfilled, (state, action) => {
         state.loading = false;
-        state.isAuthenticated = true;
-        state.user = action.payload?.user || null;
-        state.verificationRequired = false;
-        state.unverifiedEmail = null;
+        state.isAuthenticated = false;
+        state.user = null;
+        state.verificationRequired = true;
+        state.unverifiedEmail = action.payload?.email || null;
       })
       .addCase(registerUser.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
       })
-      
-      // Verify User Email
+
+      // Verify User Email (marks verified, user proceeds to login)
       .addCase(verifyUserEmail.pending, (state) => {
         state.loading = true;
         state.error = null;
       })
-      .addCase(verifyUserEmail.fulfilled, (state, action) => {
+      .addCase(verifyUserEmail.fulfilled, (state) => {
         state.loading = false;
-        state.isAuthenticated = true;
-        state.user = action.payload;
+        state.isAuthenticated = false;
         state.verificationRequired = false;
         state.unverifiedEmail = null;
         state.error = null;
@@ -191,7 +177,15 @@ const authSlice = createSlice({
         state.loading = false;
         state.error = action.payload;
       })
-      
+
+      // Resend OTP
+      .addCase(resendVerificationOtp.pending, (state) => {
+        state.error = null;
+      })
+      .addCase(resendVerificationOtp.rejected, (state, action) => {
+        state.error = action.payload;
+      })
+
       // Fetch Profile
       .addCase(fetchUserProfile.pending, (state) => {
         state.loading = true;
@@ -207,7 +201,7 @@ const authSlice = createSlice({
         state.isAuthenticated = false;
         localStorage.removeItem('hp-token');
       })
-      
+
       // Update Profile
       .addCase(updateUserProfile.pending, (state) => {
         state.loading = true;

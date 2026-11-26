@@ -28,6 +28,7 @@ export default function Analytics() {
 
   // Health Score Gradient / Color mapping
   const getScoreColor = (score) => {
+    if (score === null || score === undefined) return { stroke: '#64748b', text: 'text-slate-500 bg-slate-500/10 border-slate-500/20' };
     if (score >= 85) return { stroke: '#22c55e', text: 'text-green-500 bg-green-500/10 border-green-500/20' };
     if (score >= 70) return { stroke: '#eab308', text: 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20' };
     if (score >= 50) return { stroke: '#f97316', text: 'text-orange-500 bg-orange-500/10 border-orange-500/20' };
@@ -64,13 +65,9 @@ export default function Analytics() {
     );
   }
 
-  // Safety fallback if backend is offline/metrics not ready
-  const score = scoreBreakdown?.totalScore || 75;
-  const grade = scoreBreakdown?.grade || 'Good';
+  const score = scoreBreakdown?.totalScore ?? null;
+  const grade = scoreBreakdown?.grade || 'No data available';
   const colors = getScoreColor(score);
-  const radius = 80;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (score / 100) * circumference;
 
   return (
     <div className="space-y-6 pb-10">
@@ -122,7 +119,7 @@ export default function Analytics() {
                 fill="transparent"
                 strokeDasharray={2 * Math.PI * 80}
                 initial={{ strokeDashoffset: 2 * Math.PI * 80 }}
-                animate={{ strokeDashoffset: 2 * Math.PI * 80 - ((scoreBreakdown?.activityScore || 70) / 100) * (2 * Math.PI * 80) }}
+                animate={{ strokeDashoffset: 2 * Math.PI * 80 - ((scoreBreakdown?.activityScore ?? 0) / 100) * (2 * Math.PI * 80) }}
                 transition={{ duration: 1.2, ease: 'easeOut' }}
                 strokeLinecap="round"
               />
@@ -145,7 +142,7 @@ export default function Analytics() {
                 fill="transparent"
                 strokeDasharray={2 * Math.PI * 64}
                 initial={{ strokeDashoffset: 2 * Math.PI * 64 }}
-                animate={{ strokeDashoffset: 2 * Math.PI * 64 - ((scoreBreakdown?.heartScore || 80) / 100) * (2 * Math.PI * 64) }}
+                animate={{ strokeDashoffset: 2 * Math.PI * 64 - ((scoreBreakdown?.heartScore ?? 0) / 100) * (2 * Math.PI * 64) }}
                 transition={{ duration: 1.2, delay: 0.15, ease: 'easeOut' }}
                 strokeLinecap="round"
               />
@@ -168,7 +165,7 @@ export default function Analytics() {
                 fill="transparent"
                 strokeDasharray={2 * Math.PI * 48}
                 initial={{ strokeDashoffset: 2 * Math.PI * 48 }}
-                animate={{ strokeDashoffset: 2 * Math.PI * 48 - ((scoreBreakdown?.sleepScore || 75) / 100) * (2 * Math.PI * 48) }}
+                animate={{ strokeDashoffset: 2 * Math.PI * 48 - ((scoreBreakdown?.sleepScore ?? 0) / 100) * (2 * Math.PI * 48) }}
                 transition={{ duration: 1.2, delay: 0.3, ease: 'easeOut' }}
                 strokeLinecap="round"
               />
@@ -176,7 +173,7 @@ export default function Analytics() {
 
             {/* Overall Score Index in center */}
             <div className="absolute flex flex-col items-center justify-center">
-              <span className="text-3xl font-black text-slate-900 dark:text-white leading-none">{score}</span>
+              <span className="text-3xl font-black text-slate-900 dark:text-white leading-none">{score ?? 'N/A'}</span>
               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1">Index Score</span>
             </div>
           </div>
@@ -333,19 +330,21 @@ export default function Analytics() {
 
                   <div className="my-5 flex items-baseline gap-1">
                     <span className="text-3xl font-black text-slate-900 dark:text-white">
-                      {card.probability}%
+                      {card.probability !== null && card.probability !== undefined ? `${card.probability}%` : 'N/A'}
                     </span>
-                    <span className="text-xs text-slate-400 font-semibold">Probability</span>
+                    <span className="text-xs text-slate-400 font-semibold">
+                      {card.probability !== null && card.probability !== undefined ? 'Probability' : 'Insufficient data'}
+                    </span>
                   </div>
 
                   {/* Indicator bar */}
                   <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mb-4">
                     <motion.div
                       initial={{ width: 0 }}
-                      animate={{ width: `${card.probability}%` }}
+                      animate={{ width: `${card.probability ?? 0}%` }}
                       transition={{ duration: 1, delay: i * 0.15 }}
                       className={`h-full rounded-full ${
-                        card.color === 'red' ? 'bg-red-500' : card.color === 'yellow' ? 'bg-yellow-500' : 'bg-green-500'
+                        card.color === 'red' ? 'bg-red-500' : card.color === 'yellow' ? 'bg-yellow-500' : card.color === 'green' ? 'bg-green-500' : 'bg-slate-500'
                       }`}
                     />
                   </div>
@@ -463,15 +462,17 @@ export default function Analytics() {
               <div>
                 <span className="text-xs font-semibold text-slate-400 block mb-1">Average Sleep</span>
                 <span className="text-lg font-black text-slate-900 dark:text-white">
-                  {weeklyReport.sleepAvg} hrs
+                  {weeklyReport.sleepAvg !== null && weeklyReport.sleepAvg !== undefined ? `${weeklyReport.sleepAvg} hrs` : 'No data'}
                 </span>
               </div>
-              <div className={`flex items-center gap-0.5 text-xs font-bold px-2 py-1 rounded-lg ${
-                weeklyReport.sleepDiff >= 0 ? 'text-green-500 bg-green-500/10' : 'text-red-500 bg-red-500/10'
-              }`}>
-                {weeklyReport.sleepDiff >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
-                {Math.abs(weeklyReport.sleepDiff)}%
-              </div>
+              {weeklyReport.sleepDiff !== null && weeklyReport.sleepDiff !== undefined && (
+                <div className={`flex items-center gap-0.5 text-xs font-bold px-2 py-1 rounded-lg ${
+                  weeklyReport.sleepDiff >= 0 ? 'text-green-500 bg-green-500/10' : 'text-red-500 bg-red-500/10'
+                }`}>
+                  {weeklyReport.sleepDiff >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                  {Math.abs(weeklyReport.sleepDiff)}%
+                </div>
+              )}
             </div>
 
             {/* Steps avg */}
@@ -479,15 +480,17 @@ export default function Analytics() {
               <div>
                 <span className="text-xs font-semibold text-slate-400 block mb-1">Average Daily Steps</span>
                 <span className="text-lg font-black text-slate-900 dark:text-white">
-                  {weeklyReport.stepsAvg.toLocaleString()}
+                  {weeklyReport.stepsAvg !== null && weeklyReport.stepsAvg !== undefined ? weeklyReport.stepsAvg.toLocaleString() : 'No data'}
                 </span>
               </div>
-              <div className={`flex items-center gap-0.5 text-xs font-bold px-2 py-1 rounded-lg ${
-                weeklyReport.stepsDiff >= 0 ? 'text-green-500 bg-green-500/10' : 'text-red-500 bg-red-500/10'
-              }`}>
-                {weeklyReport.stepsDiff >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
-                {Math.abs(weeklyReport.stepsDiff)}%
-              </div>
+              {weeklyReport.stepsDiff !== null && weeklyReport.stepsDiff !== undefined && (
+                <div className={`flex items-center gap-0.5 text-xs font-bold px-2 py-1 rounded-lg ${
+                  weeklyReport.stepsDiff >= 0 ? 'text-green-500 bg-green-500/10' : 'text-red-500 bg-red-500/10'
+                }`}>
+                  {weeklyReport.stepsDiff >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                  {Math.abs(weeklyReport.stepsDiff)}%
+                </div>
+              )}
             </div>
 
             {/* Calorie avg */}
@@ -495,15 +498,17 @@ export default function Analytics() {
               <div>
                 <span className="text-xs font-semibold text-slate-400 block mb-1">Avg Calorie Intake</span>
                 <span className="text-lg font-black text-slate-900 dark:text-white">
-                  {weeklyReport.caloriesAvg.toLocaleString()} kcal
+                  {weeklyReport.caloriesAvg !== null && weeklyReport.caloriesAvg !== undefined ? `${weeklyReport.caloriesAvg.toLocaleString()} kcal` : 'No data'}
                 </span>
               </div>
-              <div className={`flex items-center gap-0.5 text-xs font-bold px-2 py-1 rounded-lg ${
-                weeklyReport.caloriesDiff <= 0 ? 'text-green-500 bg-green-500/10' : 'text-red-500 bg-red-500/10'
-              }`}>
-                {weeklyReport.caloriesDiff >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
-                {Math.abs(weeklyReport.caloriesDiff)}%
-              </div>
+              {weeklyReport.caloriesDiff !== null && weeklyReport.caloriesDiff !== undefined && (
+                <div className={`flex items-center gap-0.5 text-xs font-bold px-2 py-1 rounded-lg ${
+                  weeklyReport.caloriesDiff <= 0 ? 'text-green-500 bg-green-500/10' : 'text-red-500 bg-red-500/10'
+                }`}>
+                  {weeklyReport.caloriesDiff >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                  {Math.abs(weeklyReport.caloriesDiff)}%
+                </div>
+              )}
             </div>
 
             {/* HR avg */}
@@ -511,15 +516,17 @@ export default function Analytics() {
               <div>
                 <span className="text-xs font-semibold text-slate-400 block mb-1">Avg Heart Rate</span>
                 <span className="text-lg font-black text-slate-900 dark:text-white">
-                  {weeklyReport.hrAvg} bpm
+                  {weeklyReport.hrAvg !== null && weeklyReport.hrAvg !== undefined ? `${weeklyReport.hrAvg} bpm` : 'No data'}
                 </span>
               </div>
-              <div className={`flex items-center gap-0.5 text-xs font-bold px-2 py-1 rounded-lg ${
-                weeklyReport.hrDiff <= 0 ? 'text-green-500 bg-green-500/10' : 'text-red-500 bg-red-500/10'
-              }`}>
-                {weeklyReport.hrDiff >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
-                {Math.abs(weeklyReport.hrDiff)}%
-              </div>
+              {weeklyReport.hrDiff !== null && weeklyReport.hrDiff !== undefined && (
+                <div className={`flex items-center gap-0.5 text-xs font-bold px-2 py-1 rounded-lg ${
+                  weeklyReport.hrDiff <= 0 ? 'text-green-500 bg-green-500/10' : 'text-red-500 bg-red-500/10'
+                }`}>
+                  {weeklyReport.hrDiff >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                  {Math.abs(weeklyReport.hrDiff)}%
+                </div>
+              )}
             </div>
           </div>
 

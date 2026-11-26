@@ -54,40 +54,103 @@ KNOWN_LAB_RANGES = {
     "hba1c": {"min": 4.0, "max": 5.6, "unit": "%", "name": "HbA1c Glycated Hemoglobin"},
 }
 
-def validate_file_metadata(filename: str, content_type: Optional[str], size: int) -> None:
-    """Validate uploaded file extension, MIME type, and size."""
+def validate_file_metadata(
+    filename: str,
+    content_type: Optional[str],
+    size: int,
+    content: Optional[bytes] = None,
+) -> None:
+    """Validate uploaded file extension, MIME type, size, and optional magic bytes."""
+    if not filename or not os.path.basename(filename).strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid filename.",
+        )
+
+    if size <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file is empty.",
+        )
+
     if size > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File exceeds maximum allowed size of 10 MB (provided: {round(size / (1024*1024), 2)} MB)."
+            detail=f"File exceeds maximum allowed size of 10 MB (provided: {round(size / (1024*1024), 2)} MB).",
         )
 
     ext = os.path.splitext(filename)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid file extension '{ext}'. Allowed formats: PDF, PNG, JPG, JPEG, WEBP."
+            detail=f"Invalid file extension '{ext}'. Allowed formats: PDF, PNG, JPG, JPEG, WEBP.",
         )
 
     if content_type and content_type.lower() not in ALLOWED_MIME_TYPES:
-        # If content_type is octet-stream but extension is valid, allow with warning
         if content_type != "application/octet-stream":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unsupported media type '{content_type}'. Must be PDF or image."
+                detail=f"Unsupported media type '{content_type}'. Must be PDF or image.",
             )
+
+    if content is not None:
+        is_pdf = content[:4] == b"%PDF"
+        is_png = content[:8] == b"\x89PNG\r\n\x1a\n"
+        is_jpeg = content[:3] == b"\xff\xd8\xff"
+        is_webp = content[:4] == b"RIFF" and content[8:12] == b"WEBP"
+        if ext == ".pdf" and not is_pdf:
+            raise HTTPException(status_code=400, detail="File content does not match PDF format.")
+        if ext == ".png" and not is_png:
+            raise HTTPException(status_code=400, detail="File content does not match PNG format.")
+        if ext in {".jpg", ".jpeg"} and not is_jpeg:
+            raise HTTPException(status_code=400, detail="File content does not match JPEG format.")
+        if ext == ".webp" and not is_webp:
+            raise HTTPException(status_code=400, detail="File content does not match WEBP format.")
+
+
+def resolve_safe_upload_path(
+    folder: str,
+    stored_filename: Optional[str] = None,
+    local_path: Optional[str] = None,
+) -> str:
+    """
+    Resolve an upload path strictly inside backend/uploads/{folder} and block path traversal.
+    """
+    allowed_dir = os.path.realpath(os.path.join(UPLOAD_DIR, folder))
+    candidate = None
+    if stored_filename:
+        safe_name = os.path.basename(stored_filename)
+        if safe_name != stored_filename or safe_name in {".", ".."}:
+            raise HTTPException(status_code=400, detail="Invalid file path")
+        candidate = os.path.realpath(os.path.join(allowed_dir, safe_name))
+    elif local_path:
+        candidate = os.path.realpath(local_path)
+    else:
+        raise HTTPException(status_code=404, detail="Document file not available")
+
+    if not candidate.startswith(allowed_dir + os.sep):
+        raise HTTPException(status_code=403, detail="Access denied to file path")
+
+    if not os.path.isfile(candidate):
+        raise HTTPException(status_code=404, detail="Document file not found on server")
+
+    return candidate
+
 
 def save_file_locally(content: bytes, original_filename: str, folder: str = "records") -> Tuple[str, str]:
     """
     Saves file bytes locally into backend/uploads/{folder}/ safely.
     Returns: (stored_filename, absolute_path)
     """
-    ext = os.path.splitext(original_filename)[1].lower()
-    clean_name = re.sub(r'[^a-zA-Z0-9_\-.]', '_', os.path.splitext(original_filename)[0])
+    ext = os.path.splitext(os.path.basename(original_filename))[1].lower()
+    base_name = os.path.splitext(os.path.basename(original_filename))[0]
+    clean_name = re.sub(r'[^a-zA-Z0-9_\-.]', '_', base_name).strip("._") or "document"
     stored_filename = f"{uuid.uuid4().hex[:12]}_{clean_name}{ext}"
-    target_dir = os.path.join(UPLOAD_DIR, folder)
+    target_dir = os.path.realpath(os.path.join(UPLOAD_DIR, folder))
     os.makedirs(target_dir, exist_ok=True)
-    full_path = os.path.join(target_dir, stored_filename)
+    full_path = os.path.realpath(os.path.join(target_dir, stored_filename))
+    if not full_path.startswith(target_dir + os.sep):
+        raise HTTPException(status_code=400, detail="Invalid upload path")
 
     with open(full_path, "wb") as f:
         f.write(content)

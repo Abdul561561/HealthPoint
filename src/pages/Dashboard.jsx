@@ -192,115 +192,117 @@ export default function Dashboard() {
   };
 
   const getRealTimeHealthScore = () => {
-    if (!metrics) return 80;
-    
-    const hr = metrics.heartRate?.current ?? 0;
-    const sys = metrics.bloodPressure?.systolic ?? 0;
-    const dia = metrics.bloodPressure?.diastolic ?? 0;
-    const sleep = metrics.sleep?.hours ?? 0;
-    const steps = metrics.steps?.count ?? 0;
-    const water = metrics.water?.intake ?? 0;
-    
-    if (hr === 0 && sys === 0 && dia === 0 && sleep === 0 && steps === 0 && water === 0) {
-      return 80; // Baseline default
+    if (!metrics) return null;
+
+    const hr = metrics.heartRate?.current;
+    const sys = metrics.bloodPressure?.systolic;
+    const dia = metrics.bloodPressure?.diastolic;
+    const sleep = metrics.sleep?.hours;
+    const steps = metrics.steps?.count;
+    const bmi_val = metrics.bmi?.value;
+
+    const subScores = [];
+    if (typeof sleep === 'number' && sleep > 0) {
+      subScores.push(Math.max(0, Math.min(100, 100 - (Math.abs(8.0 - sleep) * 15))));
     }
-    
-    const hr_current = hr > 0 ? hr : 72;
-    const bp_sys = sys > 0 ? sys : 120;
-    const sleep_hrs = sleep > 0 ? sleep : 7.5;
-    const steps_count = steps > 0 ? steps : 8420;
-    const bmi_val = metrics.bmi?.value || 22.8;
-    
-    const sleep_score = Math.max(0, Math.min(100, 100 - (Math.abs(8.0 - sleep_hrs) * 15)));
-    const activity_score = Math.min(100, (steps_count / 10000.0) * 100);
-    const heart_score = Math.max(0, 100 - (Math.abs(70 - hr_current) * 2));
-    const bp_score = Math.max(0, 100 - (Math.abs(120 - bp_sys) * 2));
-    
-    let bmi_score = 100;
-    if (bmi_val > 0) {
+    if (typeof steps === 'number' && steps > 0) {
+      subScores.push(Math.min(100, (steps / 10000.0) * 100));
+    }
+    if (typeof hr === 'number' && hr > 0) {
+      subScores.push(Math.max(0, 100 - (Math.abs(70 - hr) * 2)));
+    }
+    if (typeof sys === 'number' && sys > 0 && typeof dia === 'number' && dia > 0) {
+      subScores.push(Math.max(0, 100 - (Math.abs(120 - sys) * 2)));
+    }
+    if (typeof bmi_val === 'number' && bmi_val > 0) {
       if (bmi_val >= 18.5 && bmi_val <= 25.0) {
-        bmi_score = 100;
+        subScores.push(100);
       } else if (bmi_val > 25.0) {
-        bmi_score = Math.max(0, 100 - ((bmi_val - 25.0) * 5));
+        subScores.push(Math.max(0, 100 - ((bmi_val - 25.0) * 5)));
       } else {
-        bmi_score = Math.max(0, 100 - ((18.5 - bmi_val) * 8));
+        subScores.push(Math.max(0, 100 - ((18.5 - bmi_val) * 8)));
       }
     }
-    
-    return Math.round((sleep_score + activity_score + heart_score + bp_score + bmi_score) / 5);
+
+    if (subScores.length === 0) return null;
+    return Math.round(subScores.reduce((a, b) => a + b, 0) / subScores.length);
   };
 
   const healthScore = getRealTimeHealthScore();
+  const healthGrade = healthScore === null
+    ? 'No data'
+    : healthScore >= 85
+      ? 'Optimal'
+      : healthScore >= 70
+        ? 'Good'
+        : healthScore >= 50
+          ? 'Fair'
+          : 'Needs Attention';
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+
+  const hasHr = typeof metrics?.heartRate?.current === 'number' && metrics.heartRate.current > 0;
+  const hasBp = typeof metrics?.bloodPressure?.systolic === 'number' && metrics.bloodPressure.systolic > 0;
+  const hasSleep = typeof metrics?.sleep?.hours === 'number' && metrics.sleep.hours > 0;
+  const hasCalories = typeof metrics?.calories?.burned === 'number' && metrics.calories.burned > 0;
+  const hasSteps = typeof metrics?.steps?.count === 'number' && metrics.steps.count > 0;
+  const hasWater = typeof metrics?.water?.intake === 'number' && metrics.water.intake > 0;
 
   const metricCards = [
     {
       title: 'Heart Rate',
-      value: metrics?.heartRate?.current ?? 0,
-      unit: 'bpm',
+      value: hasHr ? metrics.heartRate.current : '—',
+      unit: hasHr ? 'bpm' : 'Not recorded',
       icon: Heart,
       color: 'rose',
-      trend: 'down',
-      trendValue: '3%',
       subtitle: `Normal range: ${metrics?.heartRate?.min ?? 60}–${metrics?.heartRate?.max ?? 100} bpm`,
     },
     {
       title: 'Blood Pressure',
-      value: metrics?.bloodPressure?.systolic ? `${metrics.bloodPressure.systolic}/${metrics.bloodPressure.diastolic}` : '0/0',
-      unit: 'mmHg',
+      value: hasBp ? `${metrics.bloodPressure.systolic}/${metrics.bloodPressure.diastolic}` : '—',
+      unit: hasBp ? 'mmHg' : 'Not recorded',
       icon: Activity,
       color: 'primary',
-      trend: 'up',
-      trendValue: '1.2%',
       subtitle: 'Optimal: 120/80 mmHg',
     },
     {
       title: 'Sleep',
-      value: metrics?.sleep?.hours ?? 0,
-      unit: 'hrs',
+      value: hasSleep ? metrics.sleep.hours : '—',
+      unit: hasSleep ? 'hrs' : 'Not recorded',
       icon: Moon,
       color: 'violet',
-      trend: 'up',
-      trendValue: '0.5h',
-      subtitle: `Quality: ${metrics?.sleep?.quality ?? 'N/A'}`,
+      subtitle: `Quality: ${hasSleep ? (metrics?.sleep?.quality || 'Recorded') : 'Not provided'}`,
     },
     {
       title: 'Calories Burned',
-      value: (metrics?.calories?.burned ?? 0).toLocaleString(),
-      unit: 'kcal',
+      value: hasCalories ? metrics.calories.burned.toLocaleString() : '—',
+      unit: hasCalories ? 'kcal' : 'Not recorded',
       icon: Flame,
       color: 'amber',
-      trend: 'up',
-      trendValue: '8%',
-      subtitle: `Intake: ${metrics?.calories?.intake ?? 0} kcal`,
+      subtitle: `Intake: ${typeof metrics?.calories?.intake === 'number' ? `${metrics.calories.intake} kcal` : 'Not recorded'}`,
     },
     {
       title: 'Steps Today',
-      value: (metrics?.steps?.count ?? 0).toLocaleString(),
-      unit: 'steps',
+      value: hasSteps ? metrics.steps.count.toLocaleString() : '—',
+      unit: hasSteps ? 'steps' : 'Not recorded',
       icon: Footprints,
       color: 'green',
-      trend: 'up',
-      trendValue: '12%',
-      subtitle: `Goal: ${(metrics?.steps?.target ?? 10000).toLocaleString()}`,
+      subtitle: `Goal: ${metrics?.steps?.target ? metrics.steps.target.toLocaleString() : 'Not set'}`,
     },
     {
       title: 'Water Intake',
-      value: metrics?.water?.intake ?? 0,
-      unit: 'glasses',
+      value: hasWater ? metrics.water.intake : '—',
+      unit: hasWater ? 'glasses' : 'Not recorded',
       icon: Droplets,
       color: 'accent',
-      trend: 'down',
-      trendValue: '2',
-      subtitle: `Daily goal: ${metrics?.water?.target ?? 8} glasses`,
+      subtitle: `Daily goal: ${metrics?.water?.target ? `${metrics.water.target} glasses` : 'Not set'}`,
     },
   ];
 
   // Concentric circle attributes
   const radius = 32;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (healthScore / 100) * circumference;
+  const strokeDashoffset = circumference - ((healthScore || 0) / 100) * circumference;
 
   // Skeleton Loader elements
   if (loading && (!metrics || metrics?.heartRate?.current === 0)) {
@@ -351,8 +353,6 @@ export default function Dashboard() {
               <span>{new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
               <span className="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-700" />
               <span>{currentTime}</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-700" />
-              <span className="flex items-center gap-1">⛅ 26°C Bengaluru</span>
             </div>
           </div>
         </div>
@@ -368,7 +368,7 @@ export default function Dashboard() {
                   stroke="url(#headerIndigoCyanGrad)" strokeWidth="3" 
                   strokeDasharray={2 * Math.PI * 16} 
                   initial={{ strokeDashoffset: 2 * Math.PI * 16 }}
-                  animate={{ strokeDashoffset: 2 * Math.PI * 16 - (healthScore / 100) * (2 * Math.PI * 16) }} 
+                  animate={{ strokeDashoffset: 2 * Math.PI * 16 - ((healthScore || 0) / 100) * (2 * Math.PI * 16) }} 
                   transition={{ duration: 1.5, ease: 'easeOut' }}
                   strokeLinecap="round" 
                 />
@@ -379,18 +379,12 @@ export default function Dashboard() {
                   </linearGradient>
                 </defs>
               </svg>
-              <span className="absolute text-[9px] font-black text-slate-900 dark:text-white">{healthScore}</span>
+              <span className="absolute text-[9px] font-black text-slate-900 dark:text-white">{healthScore ?? 'N/A'}</span>
             </div>
             <div className="pr-1">
               <span className="text-[8px] font-bold text-slate-400 uppercase block leading-none">Health Score</span>
-              <span className="text-[11px] font-black text-slate-800 dark:text-white mt-1 block">Good</span>
+              <span className="text-[11px] font-black text-slate-800 dark:text-white mt-1 block">{healthGrade}</span>
             </div>
-          </div>
-
-          {/* Daily Streak */}
-          <div className="flex items-center gap-1.5 bg-rose-500/10 px-3 py-2 rounded-2xl text-rose-600 dark:text-rose-400 border border-rose-500/20 text-xs font-bold shadow-sm">
-            <span>🔥</span>
-            <span>5 Days Streak</span>
           </div>
 
           <button
@@ -479,7 +473,7 @@ export default function Dashboard() {
         {/* Right Column (lg:col-span-1) */}
         <div className="space-y-6">
           
-          {/* Today's Weather Widget */}
+          {/* Profile & BMI Summary */}
           <motion.div
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -487,31 +481,36 @@ export default function Dashboard() {
           >
             <div className="flex justify-between items-start">
               <div>
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Local Weather Conditions</span>
-                <h3 className="text-base font-black text-slate-900 dark:text-white mt-0.5">Bengaluru, India</h3>
-                <span className="text-xs font-bold text-primary-500 block mt-1">Light Shower Rain</span>
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Body Mass Index</span>
+                <h3 className="text-base font-black text-slate-900 dark:text-white mt-0.5">
+                  {metrics?.bmi?.value ? `${metrics.bmi.value} kg/m²` : 'Not provided'}
+                </h3>
+                <span className="text-xs font-bold text-primary-500 block mt-1">
+                  {metrics?.bmi?.value ? metrics.bmi.category : 'Add height & weight in Profile'}
+                </span>
               </div>
-              <div className="text-3xl">⛅</div>
+              <Activity className="w-6 h-6 text-primary-500" />
             </div>
 
             <div className="grid grid-cols-3 gap-2.5 mt-5 pt-4 border-t border-slate-150 dark:border-white/5 text-center">
               <div>
+                <span className="text-[9px] font-bold text-slate-400 block uppercase">Weight</span>
+                <strong className="text-sm font-black text-slate-800 dark:text-white mt-1 block">
+                  {metrics?.weight?.current ? `${metrics.weight.current} kg` : 'N/A'}
+                </strong>
+              </div>
+              <div>
+                <span className="text-[9px] font-bold text-slate-400 block uppercase">SpO2</span>
+                <strong className="text-sm font-black text-slate-800 dark:text-white mt-1 block">
+                  {metrics?.oxygen?.level ? `${metrics.oxygen.level}%` : 'N/A'}
+                </strong>
+              </div>
+              <div>
                 <span className="text-[9px] font-bold text-slate-400 block uppercase">Temp</span>
-                <strong className="text-sm font-black text-slate-800 dark:text-white mt-1 block">26°C</strong>
+                <strong className="text-sm font-black text-slate-800 dark:text-white mt-1 block">
+                  {metrics?.temperature?.value ? `${metrics.temperature.value}°F` : 'N/A'}
+                </strong>
               </div>
-              <div>
-                <span className="text-[9px] font-bold text-slate-400 block uppercase">Humidity</span>
-                <strong className="text-sm font-black text-slate-800 dark:text-white mt-1 block">74%</strong>
-              </div>
-              <div>
-                <span className="text-[9px] font-bold text-slate-400 block uppercase">UV Index</span>
-                <strong className="text-sm font-black text-rose-500 mt-1 block">3 Low</strong>
-              </div>
-            </div>
-
-            <div className="mt-4 p-2 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-150 dark:border-white/5 flex items-center justify-between text-[10px] font-bold text-slate-500">
-              <span>Air Quality Index:</span>
-              <span className="text-emerald-500 flex items-center gap-1">🟢 48 Good</span>
             </div>
           </motion.div>
 
@@ -621,7 +620,7 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-rose-500/10">
               <Heart className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
-              <span className="text-[10px] font-bold text-rose-500">{metrics?.heartRate?.current ?? 0} bpm</span>
+              <span className="text-[10px] font-bold text-rose-500">{hasHr ? `${metrics.heartRate.current} bpm` : 'Not recorded'}</span>
             </div>
           </div>
           <HeartRateChart height={180} />
@@ -641,7 +640,7 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-500/10">
               <Moon className="w-3.5 h-3.5 text-violet-500" />
-              <span className="text-[10px] font-bold text-violet-500">{metrics?.sleep?.hours ?? 0}h avg</span>
+              <span className="text-[10px] font-bold text-violet-500">{hasSleep ? `${metrics.sleep.hours}h` : 'Not recorded'}</span>
             </div>
           </div>
           <SleepChart height={180} />
@@ -659,7 +658,7 @@ export default function Dashboard() {
               <h3 className="text-sm font-black text-slate-900 dark:text-white">Blood Pressure</h3>
               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Vascular Resistance</p>
             </div>
-            <Badge variant="success" dot>Normal</Badge>
+            <Badge variant={hasBp ? 'success' : 'info'} dot>{hasBp ? (metrics?.bloodPressure?.status || 'Recorded') : 'Not recorded'}</Badge>
           </div>
           <BloodPressureChart height={180} />
         </motion.div>
@@ -678,7 +677,7 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/10">
               <Flame className="w-3.5 h-3.5 text-amber-500" />
-              <span className="text-[10px] font-bold text-amber-500">{metrics?.calories?.burned ?? 0} kcal</span>
+              <span className="text-[10px] font-bold text-amber-500">{hasCalories ? `${metrics.calories.burned} kcal` : 'Not recorded'}</span>
             </div>
           </div>
           <CalorieChart height={180} />

@@ -26,7 +26,7 @@ export default function Profile() {
   const [age, setAge] = useState('');
   const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
-  const [bloodGroup, setBloodGroup] = useState('O+');
+  const [bloodGroup, setBloodGroup] = useState('');
 
   // Sync state when user details load
   useEffect(() => {
@@ -34,25 +34,36 @@ export default function Profile() {
       setName(user.name || '');
       setEmail(user.email || '');
       setPhone(user.phone || '');
-      setAddress(user.address || '123 Health Ave, San Francisco, CA 94105');
-      setAge(user.age || '');
+      setAddress(user.address || '');
+      setAge(user.age ?? '');
       setHeight(user.height || '');
       setWeight(user.weight || '');
-      setBloodGroup(user.bloodGroup || 'O+');
+      setBloodGroup(user.bloodGroup || '');
     }
   }, [user]);
+
+  const profileFields = [
+    user?.name,
+    user?.email,
+    user?.phone,
+    user?.age,
+    user?.bloodGroup,
+    user?.height,
+    user?.weight,
+    user?.address,
+  ];
+  const completionPct = Math.round((profileFields.filter(Boolean).length / profileFields.length) * 100);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     const resultAction = await dispatch(updateUserProfile({
       name,
-      email,
       phone,
       address,
-      age: parseInt(age) || (user ? user.age : 25),
+      age: age !== '' ? parseInt(age, 10) : null,
       height,
       weight,
-      bloodGroup
+      bloodGroup: bloodGroup || null
     }));
     if (updateUserProfile.fulfilled.match(resultAction)) {
       setIsEditing(false);
@@ -122,40 +133,40 @@ export default function Profile() {
             <div className="w-full mt-4 space-y-1.5 px-1 text-left">
               <div className="flex justify-between text-[9px] font-bold text-slate-400">
                 <span>PROFILE COMPLETION</span>
-                <span>85%</span>
+                <span>{completionPct}%</span>
               </div>
               <div className="w-full h-1.5 bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden border border-slate-200/20 dark:border-white/5">
-                <div className="h-full bg-gradient-to-r from-primary-500 to-accent-500 rounded-full" style={{ width: '85%' }} />
+                <div className="h-full bg-gradient-to-r from-primary-500 to-accent-500 rounded-full" style={{ width: `${completionPct}%` }} />
               </div>
             </div>
 
             <div className="flex gap-2.5 mt-5 pt-5 border-t border-slate-150 dark:border-white/5 w-full justify-center">
               <div className="text-center px-4 py-2 bg-slate-50 dark:bg-white/5 rounded-xl flex-1 border border-slate-100 dark:border-white/5">
                 <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Age</span>
-                <p className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">{user?.age} yrs</p>
+                <p className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">{user?.age != null ? `${user.age} yrs` : 'Not provided'}</p>
               </div>
               <div className="text-center px-4 py-2 bg-slate-50 dark:bg-white/5 rounded-xl flex-1 border border-slate-100 dark:border-white/5">
                 <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Blood Group</span>
-                <p className="text-sm font-bold text-rose-500 mt-0.5">{user?.bloodGroup || 'O+'}</p>
+                <p className="text-sm font-bold text-rose-500 mt-0.5">{user?.bloodGroup || 'Not provided'}</p>
               </div>
             </div>
 
             <div className="w-full text-left mt-6 space-y-3.5 text-sm pt-4 border-t border-slate-150 dark:border-white/5">
               <div className="flex items-center gap-3 text-slate-600 dark:text-slate-350">
                 <Phone className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                <span>{user?.phone || 'No phone added'}</span>
+                <span>{user?.phone || 'Not provided'}</span>
               </div>
               <div className="flex items-start gap-3 text-slate-600 dark:text-slate-355">
                 <MapPin className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
-                <span className="leading-relaxed">{user?.address || '123 Health Ave, San Francisco, CA 94105'}</span>
+                <span className="leading-relaxed">{user?.address || 'Not provided'}</span>
               </div>
               <div className="flex items-center gap-3 text-slate-600 dark:text-slate-350">
                 <Shield className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                <span>{user?.insurance || 'BlueCross BlueShield'} policyholder</span>
+                <span>{user?.insurance || 'Not provided'}</span>
               </div>
               <div className="flex items-center gap-3 text-slate-600 dark:text-slate-350">
                 <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                <span>Joined {user?.memberSince || '2026-06-06'}</span>
+                <span>Joined {user?.memberSince || 'Not provided'}</span>
               </div>
             </div>
           </div>
@@ -170,76 +181,43 @@ export default function Profile() {
             <div className="grid grid-cols-2 gap-3.5">
               <div className="p-3 bg-slate-50 dark:bg-white/5 border border-slate-150 dark:border-white/5 rounded-xl">
                 <span className="text-xs text-slate-400 font-semibold">Height</span>
-                <p className="text-base font-bold text-slate-955 dark:text-white mt-1">{user?.height || 'N/A'}</p>
+                <p className="text-base font-bold text-slate-955 dark:text-white mt-1">{user?.height || 'Not provided'}</p>
               </div>
               <div className="p-3 bg-slate-50 dark:bg-white/5 border border-slate-150 dark:border-white/5 rounded-xl">
                 <span className="text-xs text-slate-400 font-semibold">Weight</span>
-                <p className="text-base font-bold text-slate-955 dark:text-white mt-1">{user?.weight || 'N/A'}</p>
+                <p className="text-base font-bold text-slate-955 dark:text-white mt-1">{user?.weight || 'Not provided'}</p>
               </div>
               <div className="p-3 bg-slate-50 dark:bg-white/5 border border-slate-150 dark:border-white/5 rounded-xl">
                 <span className="text-xs text-slate-400 font-semibold">Body Mass Index (BMI)</span>
-                <p className="text-base font-bold text-slate-955 dark:text-white mt-1">{metrics?.bmi?.value || 'N/A'}</p>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-950/20 dark:text-green-400 mt-1 inline-block font-bold">
-                  {metrics?.bmi?.category || 'Normal'}
+                <p className="text-base font-bold text-slate-955 dark:text-white mt-1">{metrics?.bmi?.value ?? 'Not provided'}</p>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-200/70 text-slate-700 dark:bg-white/10 dark:text-slate-300 mt-1 inline-block font-bold">
+                  {metrics?.bmi?.value ? metrics.bmi.category : 'No data available'}
                 </span>
               </div>
               <div className="p-3 bg-slate-50 dark:bg-white/5 border border-slate-150 dark:border-white/5 rounded-xl">
                 <span className="text-xs text-slate-400 font-semibold">Oxygen Level</span>
-                <p className="text-base font-bold text-slate-955 dark:text-white mt-1">{metrics?.oxygen?.level || 98}%</p>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-950/20 dark:text-green-400 mt-1 inline-block font-bold">
-                  Healthy
+                <p className="text-base font-bold text-slate-955 dark:text-white mt-1">
+                  {metrics?.oxygen?.level ? `${metrics.oxygen.level}%` : 'Not provided'}
+                </p>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-200/70 text-slate-700 dark:bg-white/10 dark:text-slate-300 mt-1 inline-block font-bold">
+                  {metrics?.oxygen?.level ? (metrics.oxygen.status || 'Recorded') : 'No data available'}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Health Achievements Card */}
-          <div className="glass-card p-6 space-y-4">
+          {/* Health Achievements Card (Coming Soon) */}
+          <div className="glass-card p-6 space-y-3">
             <div className="flex justify-between items-center pb-2 border-b border-slate-150 dark:border-white/5">
               <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <Award className="w-4.5 h-4.5 text-amber-500" />
                 Health Achievements
               </h3>
-              <span className="text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/15 font-bold px-2 py-0.5 rounded-full">Level 3</span>
+              <span className="text-[10px] bg-slate-500/10 text-slate-500 dark:text-slate-400 border border-slate-500/20 font-bold px-2 py-0.5 rounded-full">Coming Soon</span>
             </div>
-
-            {/* XP progress bar */}
-            <div className="space-y-1">
-              <div className="flex justify-between text-[10px] font-bold text-slate-400">
-                <span>XP PROGRESS</span>
-                <span>2,050 / 3,000 XP</span>
-              </div>
-              <div className="w-full h-2 bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden border border-slate-200/50 dark:border-white/10">
-                <div className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full" style={{ width: '68%' }} />
-              </div>
-            </div>
-
-            {/* Badges Grid */}
-            <div className="grid grid-cols-3 gap-3 pt-2">
-              {[
-                { title: 'Hydration Hero', unlocked: true, icon: '💧', desc: 'Log 8 glasses for 5 consecutive days' },
-                { title: 'Heart Healthy', unlocked: true, icon: '❤️', desc: 'Maintain normal resting heart rate' },
-                { title: 'Sleep Champion', unlocked: true, icon: '🌙', desc: 'Sleep 8+ hours 4 days in a week' },
-                { title: 'Workout Streak', unlocked: false, icon: '🏃', desc: 'Complete 3 workouts in a week' },
-                { title: 'Medicine Master', unlocked: true, icon: '💊', desc: '100% adherence to scanned meds' },
-                { title: 'Perfect Week', unlocked: false, icon: '🏆', desc: 'Meet all daily health targets' },
-              ].map((badge, idx) => (
-                <div key={idx} className={`p-2.5 rounded-xl border text-center flex flex-col items-center justify-center transition-all relative group cursor-pointer ${
-                  badge.unlocked
-                    ? 'bg-amber-500/[0.03] border-amber-500/20 text-slate-800 dark:text-slate-200 hover:scale-[1.03]'
-                    : 'bg-slate-55 dark:bg-white/[0.02] border-slate-200/50 dark:border-white/5 text-slate-400 opacity-60'
-                }`} title={badge.desc}>
-                  <span className="text-xl mb-1">{badge.icon}</span>
-                  <span className="text-[9px] font-black leading-tight truncate w-full">{badge.title}</span>
-                  {!badge.unlocked && <span className="absolute top-1 right-1 text-[8px]">🔒</span>}
-                  
-                  {/* Tooltip on hover */}
-                  <div className="absolute bottom-full mb-2 hidden group-hover:block w-40 bg-slate-900 text-white text-[9px] font-medium p-2 rounded-lg shadow-xl z-20 pointer-events-none">
-                    {badge.desc}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              Verified milestone tracking and streaks based on your recorded vitals and workouts are coming soon.
+            </p>
           </div>
 
         </div>
@@ -365,11 +343,11 @@ export default function Profile() {
             ) : (
               <div className="space-y-5">
                 {[
-                  { label: 'Full Name', value: user?.name },
-                  { label: 'Email Address', value: user?.email },
-                  { label: 'Mobile Number', value: user?.phone || 'No phone added' },
-                  { label: 'Emergency Contact', value: user?.emergencyContact || 'Sarah Johnson — +1 (555) 987-6543' },
-                  { label: 'Residential Address', value: user?.address || '123 Health Ave, San Francisco, CA 94105' }
+                  { label: 'Full Name', value: user?.name || 'Not provided' },
+                  { label: 'Email Address', value: user?.email || 'Not provided' },
+                  { label: 'Mobile Number', value: user?.phone || 'Not provided' },
+                  { label: 'Emergency Contact', value: user?.emergencyContact || 'Not provided' },
+                  { label: 'Residential Address', value: user?.address || 'Not provided' }
                 ].map((item, idx) => (
                   <div key={idx} className="pb-4 border-b border-slate-100 dark:border-white/2 flex justify-between items-start text-sm">
                     <span className="font-semibold text-slate-400 pr-4">{item.label}</span>
@@ -382,8 +360,10 @@ export default function Profile() {
                     <Award className="w-4.5 h-4.5" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">Active Premium Insurance</h4>
-                    <p className="text-xs text-slate-500 mt-0.5">Your coverage policy is active with {user?.insurance || 'BlueCross BlueShield'}. Claims can be submitted instantly on the Insurance page.</p>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">Insurance Coverage</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {user?.insurance ? `Policy provider: ${user.insurance}.` : 'No insurance policy added yet. You can explore plans or submit claims on the Insurance page.'}
+                    </p>
                   </div>
                 </div>
               </div>

@@ -6,6 +6,7 @@ import Badge from '../components/ui/Badge';
 import Modal from '../components/ui/Modal';
 import { formatDate, getStatusColor } from '../utils/helpers';
 import { analyzeMedicalReport } from '../services/aiApi';
+import { fetchProtectedFileBlobUrl } from '../services/api';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchHealthData, uploadMedicalRecord, deleteMedicalRecord } from '../redux/slices/healthSlice';
 import StructuredResponse from '../components/StructuredResponse';
@@ -152,11 +153,11 @@ export default function HealthRecords() {
           title: newTitle,
           type: newCategory === 'Imaging' ? 'Radiology' : 'Lab Report',
           date: newDate,
-          doctor: 'Dr. Sarah Mitchell',
-          hospital: 'City Heart Center',
+          doctor: 'Self Uploaded',
+          hospital: 'Personal Upload',
           status: 'normal',
           category: newCategory,
-          fileSize: '1.5 MB'
+          fileSize: 'Metadata only'
         })).unwrap();
       }
 
@@ -166,6 +167,26 @@ export default function HealthRecords() {
       setUploadOpen(false);
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleDownloadRecord = async (record) => {
+    if (!record?.url) {
+      window.alert('No downloadable file is attached to this record.');
+      return;
+    }
+    try {
+      const { url, revoke } = await fetchProtectedFileBlobUrl(record.url);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = record.filename || `${record.title || 'medical_record'}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      if (revoke) setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (err) {
+      console.error('Download failed:', err);
+      window.alert('Unable to download this document.');
     }
   };
 
@@ -281,7 +302,12 @@ export default function HealthRecords() {
                   >
                     <Eye className="w-4 h-4" />
                   </button>
-                  <button className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all">
+                  <button
+                    onClick={() => handleDownloadRecord(record)}
+                    disabled={!record.url}
+                    title={record.url ? 'Download Record' : 'No file attached'}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 hover:text-slate-600 dark:hover:text-white disabled:opacity-40 transition-all"
+                  >
                     <Download className="w-4 h-4" />
                   </button>
                   <button 
@@ -322,7 +348,7 @@ export default function HealthRecords() {
               {uploadFile ? `Selected: ${uploadFile.name}` : 'Drop files here or click to upload'}
             </p>
             <p className="text-xs text-slate-400 mt-1">
-              {uploadFile ? `${(uploadFile.size / (1024 * 1024)).toFixed(2)} MB` : 'Supports PDF, JPG, PNG — max 20 MB'}
+              {uploadFile ? `${(uploadFile.size / (1024 * 1024)).toFixed(2)} MB` : 'Supports PDF, PNG, JPG, WEBP — max 10 MB'}
             </p>
           </div>
           <div className="space-y-1">
@@ -390,12 +416,21 @@ export default function HealthRecords() {
             </div>
             <div className="flex flex-col gap-2">
               <div className="flex gap-2">
-                <button className="btn-primary flex-1 py-2.5">
+                <button
+                  onClick={() => handleDownloadRecord(viewRecord)}
+                  disabled={!viewRecord.url}
+                  className="btn-primary flex-1 py-2.5 disabled:opacity-40"
+                >
                   <Download className="w-4 h-4" />
                   Download
                 </button>
-                <button className="flex-1 py-2.5 rounded-xl border-2 border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:border-primary-500 hover:text-primary-500 transition-all font-semibold text-sm">
-                  Share with Doctor
+                <button
+                  type="button"
+                  disabled
+                  title="Coming Soon"
+                  className="flex-1 py-2.5 rounded-xl border-2 border-slate-200 dark:border-white/10 text-slate-400 opacity-70 cursor-not-allowed font-semibold text-sm"
+                >
+                  Share with Doctor (Coming Soon)
                 </button>
               </div>
               <button 

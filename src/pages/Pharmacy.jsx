@@ -18,7 +18,7 @@ import {
 } from '../redux/slices/pharmacySlice';
 import { addToast } from '../redux/slices/uiSlice';
 import { useTheme } from '../hooks/useTheme';
-import api from '../services/api';
+import api, { fetchProtectedFileBlobUrl } from '../services/api';
 import { searchNearbyPharmacies, searchAddress, getRoute } from '../services/openMapsApi';
 
 const TABS = [
@@ -180,6 +180,46 @@ export default function Pharmacy() {
     dispatch(fetchPrescriptionHistory());
     dispatch(fetchLatestPrescription());
   }, [dispatch]);
+
+  const [protectedRxUrl, setProtectedRxUrl] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    let revokeUrl = null;
+    const loadPreview = async () => {
+      if (!uploadedPrescription?.url) {
+        setProtectedRxUrl(null);
+        return;
+      }
+      try {
+        const { url, revoke } = await fetchProtectedFileBlobUrl(uploadedPrescription.url);
+        if (!active) {
+          if (revoke) URL.revokeObjectURL(url);
+          return;
+        }
+        if (revoke) revokeUrl = url;
+        setProtectedRxUrl(url);
+      } catch {
+        if (active) setProtectedRxUrl(null);
+      }
+    };
+    loadPreview();
+    return () => {
+      active = false;
+      if (revokeUrl) URL.revokeObjectURL(revokeUrl);
+    };
+  }, [uploadedPrescription?.url]);
+
+  const handleViewOriginalRx = async (rx) => {
+    if (!rx?.url) return;
+    try {
+      const { url, revoke } = await fetchProtectedFileBlobUrl(rx.url);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      if (revoke) setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch {
+      dispatch(addToast({ title: 'Access Error', message: 'Unable to open protected prescription file.', type: 'error' }));
+    }
+  };
 
   // Fetch pharmacies using Overpass API
   const fetchPharmacies = useCallback(async () => {
@@ -685,8 +725,12 @@ export default function Pharmacy() {
                   Active Prescription
                 </h3>
                 <div className="p-2 rounded-xl border border-slate-150 dark:border-white/5 space-y-3">
-                  <div className="aspect-video rounded-lg bg-slate-150 dark:bg-white/5 overflow-hidden">
-                    <img src={uploadedPrescription.url} alt="Uploaded Rx" className="w-full h-full object-cover" />
+                  <div className="aspect-video rounded-lg bg-slate-150 dark:bg-white/5 overflow-hidden flex items-center justify-center">
+                    {protectedRxUrl ? (
+                      <img src={protectedRxUrl} alt="Uploaded Rx" className="w-full h-full object-cover" />
+                    ) : (
+                      <FileText className="w-8 h-8 text-slate-400" />
+                    )}
                   </div>
                   <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{uploadedPrescription.filename}</p>
                   <span className="inline-flex px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 text-[10px] font-bold">✓ Verified</span>
@@ -1006,15 +1050,14 @@ export default function Pharmacy() {
                     >
                       <Sparkles className="w-3.5 h-3.5" /> View Analysis Report
                     </button>
-                    <a
-                      href={rx.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      type="button"
+                      onClick={() => handleViewOriginalRx(rx)}
                       className="px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 flex items-center justify-center transition-all"
-                      title="View Original Image"
+                      title="View Original File"
                     >
                       <Eye className="w-4 h-4" />
-                    </a>
+                    </button>
                     <button
                       onClick={() => handleDeletePrescription(rx.id)}
                       className="px-3 py-2 rounded-xl border border-rose-200 dark:border-rose-500/25 text-rose-500 hover:bg-rose-500/10 hover:border-rose-500/40 flex items-center justify-center transition-all"
