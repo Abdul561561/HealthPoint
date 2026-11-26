@@ -2,6 +2,7 @@ import asyncio
 import pytest
 from unittest.mock import patch, MagicMock
 from google.genai import errors as genai_errors
+from google.genai import types
 from services.llm_service import LLMService, LLMServiceException, mask_key
 from controllers.ai_controller import chat_ai_controller, _format_unavailable_message
 
@@ -29,7 +30,7 @@ async def test_22_rate_limit_handling():
     async def mock_generate(*args, **kwargs):
         raise genai_errors.APIError(
             429,
-            {"error": {"code": 429, "message": "Resource exhausted", "status": "RESOURCE_EXHAUSTED"}},
+            {"error": {"code": 429, "message": "Rate limit per minute reached", "status": "RESOURCE_EXHAUSTED"}},
         )
 
     with patch.object(LLMService, "_build_client", return_value=_make_mock_client(mock_generate)):
@@ -41,7 +42,7 @@ async def test_22_rate_limit_handling():
                 assert exc.value.error_category == "rate_limited"
 
 
-# 23. Model unavailable (404 fails fast with model_unavailable)
+# 23. Model unavailable (404 switches to fallback if configured, or fails fast on override)
 async def test_23_model_unavailable_fails_fast():
     llm = LLMService()
     llm.max_retries = 2
@@ -104,10 +105,11 @@ async def test_25_slow_response_timeout():
 
     with patch.object(LLMService, "_build_client", return_value=_make_mock_client(mock_slow_generate)):
         with patch("services.llm_service.get_api_key", return_value="AIzaTestMockKey12345"):
-            with pytest.raises(LLMServiceException) as exc:
-                await llm.generate_completion(messages=[{"role": "user", "content": "test"}])
-            assert exc.value.status_code == 408
-            assert exc.value.error_category == "network_timeout"
+            with patch("services.llm_service.get_fallback_model", return_value=""):
+                with pytest.raises(LLMServiceException) as exc:
+                    await llm.generate_completion(messages=[{"role": "user", "content": "test"}])
+                assert exc.value.status_code == 408
+                assert exc.value.error_category == "timeout"
 
 
 # 26. Malformed / None model output
@@ -122,9 +124,10 @@ async def test_26_malformed_model_output():
 
     with patch.object(LLMService, "_build_client", return_value=_make_mock_client(mock_generate)):
         with patch("services.llm_service.get_api_key", return_value="AIzaTestMockKey12345"):
-            with pytest.raises(LLMServiceException) as exc:
-                await llm.generate_completion(messages=[{"role": "user", "content": "test"}])
-            assert exc.value.error_category == "empty_response"
+            with patch("services.llm_service.get_fallback_model", return_value=""):
+                with pytest.raises(LLMServiceException) as exc:
+                    await llm.generate_completion(messages=[{"role": "user", "content": "test"}])
+                assert exc.value.error_category == "empty_response"
 
 
 # 27. Empty response content
@@ -139,9 +142,10 @@ async def test_27_empty_response_content():
 
     with patch.object(LLMService, "_build_client", return_value=_make_mock_client(mock_generate)):
         with patch("services.llm_service.get_api_key", return_value="AIzaTestMockKey12345"):
-            with pytest.raises(LLMServiceException) as exc:
-                await llm.generate_completion(messages=[{"role": "user", "content": "test"}])
-            assert exc.value.error_category == "empty_response"
+            with patch("services.llm_service.get_fallback_model", return_value=""):
+                with pytest.raises(LLMServiceException) as exc:
+                    await llm.generate_completion(messages=[{"role": "user", "content": "test"}])
+                assert exc.value.error_category == "empty_response"
 
 
 # 28. Key masking security
@@ -151,21 +155,101 @@ async def test_28_mask_key_security():
     assert mask_key("AIzaSyDummyKey1234567890ABCD") == "AIza...ABCD"
 
 
-# 29. Error categorization returns safe user-facing messages
+# 29. All error categories return distinct safe user-facing messages
 async def test_29_provider_error_categorization_and_user_messages():
     cases = [
         (401, "unconfigured_api_key", "gemini_api_key"),
         (401, "invalid_api_key", "invalid api key"),
-        (403, "insufficient_credits_or_restricted", "quota limits"),
+        (403, "permission_denied", "permission denied"),
+        (429, "quota_exhausted", "exceeded"),
         (429, "rate_limited", "rate-limited"),
         (404, "model_unavailable", "gemini_model"),
-        (400, "malformed_request", "request format"),
-        (408, "network_timeout", "timed out"),
-        (503, "provider_outage", "temporarily unavailable"),
+        (400, "invalid_request_format", "request format"),
+        (408, "timeout", "timed out"),
+        (502, "empty_response", "empty response"),
+        (503, "provider_outage", "high demand"),
     ]
     for code, cat, expected_substr in cases:
         exc = LLMServiceException("raw err", status_code=code, error_category=cat)
         msg = _format_unavailable_message(exc, "Health information")
         assert expected_substr in msg.lower()
         assert "aiza" not in msg.lower()
-        assert "sk-or-" not in msg.lower()
+        assert "aq." not in msg.lower()
+
+
+# 30. Regression test: Gemini 3.8 Flash omits deprecated sampling params & normalizes chat history
+async def test_30_gemini_38_flash_request_format_omits_sampling_and_leading_model():
+    llm = LLMService()
+    captured = {}
+
+    async def mock_generate(*, model, contents, config):
+        captured["model"] = model
+        captured["contents"] = contents
+        captured["config"] = config
+        resp = MagicMock()
+        resp.text = "Hello! How can I help you?"
+        return resp
+
+    messages = [
+        {"role": "model", "content": "Hello! I'm HealthPoint AI, your personal assistant."},
+        {"role": "user", "content": "previous failed message"},
+        {"role": "model", "content": "HealthPoint AI could not process the request format with Google Gemini."},
+        {"role": "user", "content": "Earlier greeting"},
+        {"role": "model", "content": "Hi there!"},
+        {"role": "user", "content": "hi"},
+    ]
+
+    with patch.object(LLMService, "_build_client", return_value=_make_mock_client(mock_generate)):
+        with patch("services.llm_service.get_api_key", return_value="AIzaTestMockKey12345"):
+            with patch("services.llm_service.get_configured_model", return_value="gemini-3.8-flash"):
+                reply = await llm.generate_completion(
+                    messages=messages,
+                    system_instruction="Respond warmly.",
+                    temperature=0.7,
+                    request_mode="conversation",
+                )
+
+    assert reply == "Hello! How can I help you?"
+    cfg = captured["config"]
+    # Gemini 3.8 Flash rejects deprecated temperature/top_p/top_k and must not force JSON on greetings
+    assert cfg.temperature is None
+    assert cfg.top_p is None
+    assert cfg.top_k is None
+    assert cfg.response_mime_type is None
+    assert cfg.thinking_config is not None
+    assert cfg.thinking_config.thinking_level == types.ThinkingLevel.LOW
+
+    # Normalized contents must start and end with 'user', stripping welcome greeting & prior error turns
+    contents = captured["contents"]
+    assert [c.role for c in contents] == ["user", "model", "user"]
+    assert contents[0].parts[0].text == "Earlier greeting"
+    assert contents[1].parts[0].text == "Hi there!"
+    assert contents[2].parts[0].text == "hi"
+
+
+# 31. Regression test: 503 high-demand spike on gemini-3.8-flash falls back cleanly to gemini-3.5-flash-lite
+async def test_31_503_high_demand_falls_back_to_flash_lite():
+    llm = LLMService()
+    llm.max_retries = 2
+    models_called = []
+
+    async def mock_generate(*, model, contents, config):
+        models_called.append(model)
+        if model == "gemini-3.8-flash":
+            raise genai_errors.APIError(
+                503,
+                {"error": {"code": 503, "message": "This model is currently experiencing high demand.", "status": "UNAVAILABLE"}},
+            )
+        resp = MagicMock()
+        resp.text = "Hello from Flash-Lite fallback!"
+        return resp
+
+    with patch.object(LLMService, "_build_client", return_value=_make_mock_client(mock_generate)):
+        with patch("services.llm_service.get_api_key", return_value="AIzaTestMockKey12345"):
+            with patch("services.llm_service.get_configured_model", return_value="gemini-3.8-flash"):
+                with patch("services.llm_service.get_fallback_model", return_value="gemini-3.5-flash-lite"):
+                    with patch("asyncio.sleep", return_value=None):
+                        reply = await llm.generate_completion(messages=[{"role": "user", "content": "hi"}])
+
+    assert reply == "Hello from Flash-Lite fallback!"
+    assert models_called == ["gemini-3.8-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite"]

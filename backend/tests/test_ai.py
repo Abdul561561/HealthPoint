@@ -197,12 +197,14 @@ async def test_14b_gemini_config_and_missing_key_error():
         assert "gemini_api_key" in chat_res["reply"].lower() or "unavailable" in chat_res["reply"].lower()
 
 
-# 14c. Required prompt behaviors (greetings, general knowledge, health, and synthetic report)
+# 14c. Required prompt behaviors (greetings, general knowledge, programming, health, and synthetic report)
 async def test_14c_prompt_behaviors_and_synthetic_report():
-    # 1 & 2. Greetings / Casual ("Hi", "How are you?") -> no medical disclaimer forced
+    # 1, 2, 3, 4. Greetings, Casual, General AI, Programming -> no forced medical disclaimer
     for prompt_text, mock_reply in [
         ("Hi", "Hi there! How can I help you today?"),
         ("How are you?", "I'm doing well, thanks for asking! What can I help you with?"),
+        ("Explain artificial intelligence.", "Artificial intelligence enables software systems to perform tasks such as reasoning and pattern recognition."),
+        ("Explain Python functions.", "In Python, functions are defined with `def` to group reusable logic."),
         ("Explain what OCR is.", "OCR (Optical Character Recognition) converts images of text into machine-readable text."),
     ]:
         with patch(
@@ -214,10 +216,10 @@ async def test_14c_prompt_behaviors_and_synthetic_report():
             assert mock_reply in res["reply"]
             assert "Disclaimer" not in res["reply"]
 
-    # 4 & 5. Health questions -> informational guidance with safety disclaimer
+    # 5 & 6. Health questions -> informational guidance with safety disclaimer
     for health_q, mock_reply in [
-        ("How can I improve my sleep cycle?", "Keep a consistent wake time and limit caffeine late in the day."),
         ("What is blood pressure?", "Blood pressure measures the force of blood pushing against artery walls."),
+        ("How can I improve my sleep cycle?", "Keep a consistent wake time and limit caffeine late in the day."),
     ]:
         with patch(
             "services.llm_service.LLMService.generate_completion",
@@ -228,7 +230,7 @@ async def test_14c_prompt_behaviors_and_synthetic_report():
             assert mock_reply in res["reply"]
             assert "Disclaimer" in res["reply"]
 
-    # 6. Synthetic report analysis without fabrication + disclaimer
+    # 7. Synthetic report analysis without fabrication + disclaimer
     with patch(
         "services.llm_service.LLMService.generate_completion",
         new=AsyncMock(return_value="Review of uploaded synthetic panel: consult your physician for interpretation."),

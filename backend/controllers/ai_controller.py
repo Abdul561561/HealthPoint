@@ -55,10 +55,15 @@ def _format_unavailable_message(llm_err: Exception, intent: str) -> str:
             "HealthPoint AI could not authenticate with Google Gemini (invalid API key). "
             "Please check the backend `GEMINI_API_KEY` configuration."
         )
-    if category == "insufficient_credits_or_restricted" or status_code in (402, 403):
+    if category == "permission_denied" or status_code == 403:
         return (
-            "HealthPoint AI is currently unavailable due to Gemini API quota limits or access restrictions "
-            "for the configured model."
+            "HealthPoint AI was denied access by Google Gemini (API permission denied for this key or project). "
+            "Please verify Gemini API permissions in Google AI Studio / Cloud."
+        )
+    if category == "quota_exhausted" or status_code == 402:
+        return (
+            "HealthPoint AI has exceeded the configured Google Gemini API quota. "
+            "Please check quota/billing limits in Google AI Studio."
         )
     if category == "rate_limited" or status_code == 429:
         return (
@@ -70,19 +75,24 @@ def _format_unavailable_message(llm_err: Exception, intent: str) -> str:
             "HealthPoint AI is temporarily unavailable because the configured Gemini model "
             "is not supported or could not be found. Please check `GEMINI_MODEL`."
         )
-    if category == "malformed_request" or status_code in (400, 422):
+    if category in ("invalid_request_format", "malformed_request") or status_code in (400, 422):
         return (
             "HealthPoint AI could not process the request format with Google Gemini. "
             "Please try rephrasing your question."
         )
-    if category in ("network_timeout", "network_error") or status_code == 408:
+    if category in ("timeout", "network_timeout") or status_code == 408:
         return (
             "HealthPoint AI timed out while waiting for Google Gemini to respond. "
             "Please try again in a moment."
         )
+    if category == "empty_response":
+        return (
+            "Google Gemini returned an empty response for your message. "
+            "Please try asking again or rephrasing slightly."
+        )
     return (
-        "HealthPoint AI is temporarily unavailable right now because Google Gemini "
-        "could not be reached. Please try again in a moment."
+        "HealthPoint AI is temporarily unavailable right now because Google Gemini is experiencing high demand or an outage. "
+        "Please try again in a moment."
     )
 
 
@@ -173,30 +183,36 @@ async def chat_ai_controller(user_email: str, message: str, session_id: Optional
     llm_service = get_llm_service()
     history_to_send = []
     for msg in session.get("messages", [])[-8:]:
+        if msg.get("ai_error"):
+            continue
         role = msg.get("role", "user")
         if role == "model":
             role = "assistant"
-        history_to_send.append({"role": role, "content": msg.get("content", "")})
+        history_to_send.append({"role": role, "content": msg.get("content", ""), "ai_error": bool(msg.get("ai_error"))})
     history_to_send.append({"role": "user", "content": message})
 
     ai_available = True
     error_reason = None
+    error_category = None
     try:
         reply = await llm_service.generate_completion(
             messages=history_to_send,
             system_instruction=system_instruction,
-            temperature=0.7 if intent != IntentType.PROGRAMMING else 0.2,
+            request_mode="conversation",
         )
     except LLMServiceException as llm_err:
+        error_category = getattr(llm_err, "error_category", "provider_error")
         logger.warning(
-            "Gemini completion failed (status=%s, category=%s)",
+            "Gemini completion failed (status=%s, category=%s, stage=%s)",
             llm_err.status_code,
-            getattr(llm_err, "error_category", "provider_error"),
+            error_category,
+            getattr(llm_err, "stage", "api_call"),
         )
         ai_available = False
         error_reason = str(llm_err)
         reply = _format_unavailable_message(llm_err, intent)
     except Exception as llm_err:
+        error_category = "provider_outage"
         logger.warning("Unexpected Gemini failure: %s", type(llm_err).__name__)
         ai_available = False
         error_reason = "AI provider error"
@@ -205,6 +221,12 @@ async def chat_ai_controller(user_email: str, message: str, session_id: Optional
     if ai_available and intent_data.get("requires_disclaimer") and SYSTEM_DISCLAIMER not in reply:
         reply = reply.strip() + SYSTEM_DISCLAIMER
 
+    user_entry = {"role": "user", "content": message}
+    model_entry: Dict[str, Any] = {"role": "model", "content": reply}
+    if not ai_available:
+        user_entry["ai_error"] = True
+        model_entry["ai_error"] = True
+
     if db is not None and session.get("id") != "ephemeral":
         await db.chat_history.update_one(
             {"_id": ObjectId(session["id"]), "user_email": user_email},
@@ -212,8 +234,8 @@ async def chat_ai_controller(user_email: str, message: str, session_id: Optional
                 "$push": {
                     "messages": {
                         "$each": [
-                            {"role": "user", "content": message},
-                            {"role": "model", "content": reply},
+                            user_entry,
+                            model_entry,
                         ]
                     }
                 }
@@ -223,8 +245,8 @@ async def chat_ai_controller(user_email: str, message: str, session_id: Optional
         history_out = updated_session["messages"] if updated_session else session.get("messages", [])
     else:
         history_out = session.get("messages", []) + [
-            {"role": "user", "content": message},
-            {"role": "model", "content": reply},
+            user_entry,
+            model_entry,
         ]
 
     return {
@@ -233,6 +255,7 @@ async def chat_ai_controller(user_email: str, message: str, session_id: Optional
         "intent": intent,
         "ai_available": ai_available,
         "error_reason": error_reason,
+        "error_category": error_category,
         "history": history_out,
     }
 
@@ -489,6 +512,7 @@ async def analyze_report_controller(
             system_instruction=system_instr,
             image_bytes=multimodal_bytes,
             image_mime=multimodal_mime,
+            request_mode="multimodal" if multimodal_bytes else "conversation",
         )
     except LLMServiceException as e:
         ai_available = False
@@ -595,6 +619,7 @@ Return ONLY valid JSON."""
             messages=[{"role": "user", "content": prompt}],
             system_instruction=system_instr,
             response_json=True,
+            request_mode="structured",
         )
         text = text.strip()
         if text.startswith("```"):

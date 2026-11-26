@@ -155,7 +155,8 @@ async def analyze_prescription_image(image_bytes: bytes, mime_type: str, filenam
             system_instruction=system_instruction,
             image_bytes=image_bytes if (image_bytes and not extracted_text) else None,
             image_mime=m_type if (image_bytes and not extracted_text) else None,
-            response_json=True
+            response_json=True,
+            request_mode="multimodal" if (image_bytes and not extracted_text) else "structured",
         )
         text = text.strip()
         if text.startswith("```"):
