@@ -138,15 +138,23 @@ async def analyze_prescription_image(image_bytes: bytes, mime_type: str, filenam
         prompt += f"\nExtracted Document Text:\n{extracted_text[:2000]}"
 
     m_type = mime_type if mime_type else "image/png"
-    
+    if image_bytes[:4] == b"%PDF":
+        m_type = "application/pdf"
+    elif image_bytes[:3] == b"\xff\xd8\xff":
+        m_type = "image/jpeg"
+    elif image_bytes[:8] == b"\x89PNG\r\n\x1a\n":
+        m_type = "image/png"
+    elif image_bytes[:4] == b"RIFF" and image_bytes[8:12] == b"WEBP":
+        m_type = "image/webp"
+
     try:
-        print("[PharmacyController] Attempting prescription analysis via OpenRouter LLM Service...")
+        print("[PharmacyController] Attempting prescription analysis via Google Gemini LLM Service...")
         llm = get_llm_service()
         text = await llm.generate_completion(
             messages=[{"role": "user", "content": prompt}],
             system_instruction=system_instruction,
-            image_bytes=image_bytes if not extracted_text else None,
-            image_mime=m_type if not extracted_text else None,
+            image_bytes=image_bytes if (image_bytes and not extracted_text) else None,
+            image_mime=m_type if (image_bytes and not extracted_text) else None,
             response_json=True
         )
         text = text.strip()
@@ -156,10 +164,10 @@ async def analyze_prescription_image(image_bytes: bytes, mime_type: str, filenam
             if lines[-1].startswith("```"): lines = lines[:-1]
             text = "\n".join(lines).strip()
         analysis_data = json.loads(text)
-        print("[PharmacyController] Successfully analyzed prescription via LLM Service.")
+        print("[PharmacyController] Successfully analyzed prescription via Google Gemini LLM Service.")
         return analysis_data
     except Exception as model_err:
-        print(f"[PharmacyController] OpenRouter LLM prescription analysis unavailable ({model_err}). Running local parser.")
+        print(f"[PharmacyController] Gemini LLM prescription analysis unavailable ({type(model_err).__name__}). Running local parser.")
         return parse_prescription_text(extracted_text, filename=filename)
 
 def _sanitize_prescription(pres: dict) -> dict:

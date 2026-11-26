@@ -9,6 +9,7 @@ python-dotenv
 bcrypt
 cloudinary
 httpx
+google-genai
 scikit-learn
 numpy
 email-validator

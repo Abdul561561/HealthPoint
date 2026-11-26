@@ -58,7 +58,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="HealthPoint API",
-    description="AI-Powered Digital Healthcare Ecosystem — FastAPI + MongoDB + OpenRouter",
+    description="AI-Powered Digital Healthcare Ecosystem — FastAPI + MongoDB + Google Gemini",
     version="2.0.0",
     lifespan=lifespan,
 )
@@ -100,7 +100,7 @@ def read_root():
         "name": "HealthPoint Backend API v2",
         "status": "online",
         "smtp_configured": smtp_diag["configured"],
-        "features": ["MongoDB", "Email OTP Auth", "OpenRouter Free AI"],
+        "features": ["MongoDB", "Email OTP Auth", "Google Gemini AI"],
         "docs_url": "/docs",
     }
 

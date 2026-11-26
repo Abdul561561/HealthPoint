@@ -174,12 +174,16 @@ export default function AIAssistant() {
       setMessages(mappedHistory);
     } catch (err) {
       console.error("Failed to get AI response:", err);
+      const serverDetail = err?.response?.data?.detail;
+      const fallbackMsg = typeof serverDetail === 'string' && serverDetail.trim()
+        ? serverDetail
+        : "I am currently having trouble connecting to AI services. Please try again in a moment.";
       setMessages(prev => [
         ...prev,
         {
           id: Date.now() + 1,
           role: 'assistant',
-          message: "I am currently having trouble connecting to AI services. Please try again in a moment.",
+          message: fallbackMsg,
           timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
           failed: true,
           retryText: userMsg
@@ -232,7 +236,7 @@ export default function AIAssistant() {
               <h3 className="font-bold text-slate-900 dark:text-white">HealthAI</h3>
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                <span className="text-xs text-green-500 font-medium">Online — OpenRouter AI</span>
+                <span className="text-xs text-green-500 font-medium">Online — Gemini AI</span>
               </div>
             </div>
           </div>

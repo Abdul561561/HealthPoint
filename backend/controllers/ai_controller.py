@@ -2,8 +2,8 @@
 HealthPoint AI Controller
 =========================
 Orchestrates natural general-purpose conversation and specialized healthcare assistance
-using the OpenRouter free-model LLM service, intent detection, minimized health context
-retrieval, RAG, and real medical document analysis.
+using Google Gemini (`google-genai`), intent detection, minimized health context
+retrieval, RAG, and multimodal medical document analysis.
 """
 
 import json
@@ -33,7 +33,7 @@ SYSTEM_DISCLAIMER = (
 
 
 def _format_unavailable_message(llm_err: Exception, intent: str) -> str:
-    """Return an honest, user-friendly explanation when OpenRouter cannot complete a request."""
+    """Return an honest, user-friendly explanation tailored to the Gemini failure category."""
     if intent == IntentType.EMERGENCY:
         return (
             "URGENT EMERGENCY NOTICE: If you or someone nearby is experiencing severe chest pain, "
@@ -43,24 +43,46 @@ def _format_unavailable_message(llm_err: Exception, intent: str) -> str:
         )
 
     status_code = getattr(llm_err, "status_code", None)
-    if status_code == 401 and "not configured" in str(llm_err).lower():
+    category = getattr(llm_err, "error_category", "") or ""
+
+    if category == "unconfigured_api_key" or (status_code == 401 and "not configured" in str(llm_err).lower()):
         return (
-            "HealthPoint AI is currently unavailable because `OPENROUTER_API_KEY` is not configured "
-            "on the backend server. Please ask the administrator to add a free OpenRouter API key."
+            "HealthPoint AI is currently unavailable because `GEMINI_API_KEY` is not configured "
+            "on the backend server. Please ask the administrator to configure a Google Gemini API key."
         )
-    if status_code == 401:
+    if category == "invalid_api_key" or status_code == 401:
         return (
-            "HealthPoint AI could not authenticate with OpenRouter (invalid API key). "
-            "Please check the backend `OPENROUTER_API_KEY` configuration."
+            "HealthPoint AI could not authenticate with Google Gemini (invalid API key). "
+            "Please check the backend `GEMINI_API_KEY` configuration."
         )
-    if status_code == 429:
+    if category == "insufficient_credits_or_restricted" or status_code in (402, 403):
         return (
-            "HealthPoint AI is temporarily rate-limited on the configured free-tier OpenRouter models. "
+            "HealthPoint AI is currently unavailable due to Gemini API quota limits or access restrictions "
+            "for the configured model."
+        )
+    if category == "rate_limited" or status_code == 429:
+        return (
+            "HealthPoint AI is temporarily rate-limited by the Google Gemini API. "
             "Please wait a moment and try again."
         )
+    if category == "model_unavailable" or status_code in (404, 410):
+        return (
+            "HealthPoint AI is temporarily unavailable because the configured Gemini model "
+            "is not supported or could not be found. Please check `GEMINI_MODEL`."
+        )
+    if category == "malformed_request" or status_code in (400, 422):
+        return (
+            "HealthPoint AI could not process the request format with Google Gemini. "
+            "Please try rephrasing your question."
+        )
+    if category in ("network_timeout", "network_error") or status_code == 408:
+        return (
+            "HealthPoint AI timed out while waiting for Google Gemini to respond. "
+            "Please try again in a moment."
+        )
     return (
-        "HealthPoint AI is temporarily unavailable right now because the configured free OpenRouter "
-        "models could not be reached. Please try again in a moment."
+        "HealthPoint AI is temporarily unavailable right now because Google Gemini "
+        "could not be reached. Please try again in a moment."
     )
 
 
@@ -70,7 +92,7 @@ async def chat_ai_controller(user_email: str, message: str, session_id: Optional
     - Enforces rate limiting and chat-session ownership.
     - Classifies intent and preserves follow-up context.
     - Retrieves minimal de-identified health data ONLY when relevant.
-    - Executes completion via OpenRouter free models with transparent fallback messages.
+    - Executes completion via Google Gemini (`google-genai`) with transparent fallback messages.
     """
     rate_limiter.check("ai_chat", user_email, max_requests=30, window_seconds=300)
     db = get_database()
@@ -166,14 +188,16 @@ async def chat_ai_controller(user_email: str, message: str, session_id: Optional
             temperature=0.7 if intent != IntentType.PROGRAMMING else 0.2,
         )
     except LLMServiceException as llm_err:
-        if llm_err.status_code == 400:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(llm_err))
-        logger.warning("OpenRouter completion failed (%s): %s", llm_err.status_code, llm_err)
+        logger.warning(
+            "Gemini completion failed (status=%s, category=%s)",
+            llm_err.status_code,
+            getattr(llm_err, "error_category", "provider_error"),
+        )
         ai_available = False
         error_reason = str(llm_err)
         reply = _format_unavailable_message(llm_err, intent)
     except Exception as llm_err:
-        logger.warning("Unexpected OpenRouter failure: %s", type(llm_err).__name__)
+        logger.warning("Unexpected Gemini failure: %s", type(llm_err).__name__)
         ai_available = False
         error_reason = "AI provider error"
         reply = _format_unavailable_message(llm_err, intent)
@@ -355,6 +379,20 @@ async def delete_chat_session_controller(user_email: str, session_id: str) -> Di
     return {"success": True, "message": "Session deleted successfully"}
 
 
+def _detect_mime_from_bytes(content: bytes) -> Optional[str]:
+    if not content:
+        return None
+    if content[:4] == b"%PDF":
+        return "application/pdf"
+    if content[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if content[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
 async def analyze_report_controller(
     user_email: str,
     title: str,
@@ -364,7 +402,8 @@ async def analyze_report_controller(
 ) -> Dict[str, Any]:
     """
     Performs medical document analysis with strict record ownership verification.
-    Does not fabricate illegible values or silently pretend local parsing is AI output.
+    Supports text-based PDFs and Gemini multimodal vision/OCR for medical images and scanned PDFs.
+    Does not fabricate illegible values or pretend local parsing is AI output.
     """
     db = get_database()
     file_bytes = None
@@ -405,26 +444,41 @@ async def analyze_report_controller(
             except Exception as e:
                 logger.warning("Could not download external attachment: %s", type(e).__name__)
 
-    if file_bytes and file_bytes[:4] == b"%PDF":
+    detected_mime = _detect_mime_from_bytes(file_bytes) if file_bytes else None
+    if file_bytes and detected_mime == "application/pdf":
         extracted_text = extract_text_from_pdf(file_bytes)
 
     markers = extract_lab_markers(extracted_text) if extracted_text else []
+
+    # Attach multimodal bytes for images or scanned PDFs where text extraction yielded nothing
+    multimodal_bytes: Optional[bytes] = None
+    multimodal_mime: Optional[str] = None
+    if file_bytes and detected_mime:
+        if detected_mime.startswith("image/") or (detected_mime == "application/pdf" and not extracted_text.strip()):
+            multimodal_bytes = file_bytes
+            multimodal_mime = detected_mime
 
     prompt = f"Analyze the medical report titled '{title}' (Category: {category}).\n"
     if extracted_text:
         prompt += f"Document Extracted Text:\n{extracted_text[:2500]}\n"
     if markers:
         prompt += f"Extracted Test Biomarkers:\n{json.dumps(markers, indent=2)}\n"
-    if not extracted_text and not markers:
+    if not extracted_text and not markers and not multimodal_bytes:
         prompt += (
-            "No machine-readable text could be extracted from this file yet. "
+            "No machine-readable text or image attachment is available for this report. "
             "Explain clearly that automated value extraction was not possible and do NOT invent any numbers.\n"
+        )
+    elif multimodal_bytes:
+        prompt += (
+            "Inspect the attached medical document or scan carefully. Extract only clearly legible "
+            "values and mark anything unreadable as unclear — NEVER invent numbers.\n"
         )
 
     system_instr = (
-        "You are a clinical laboratory information assistant. Review only the extracted report content provided. "
-        "Explain findings in clear, patient-friendly terms, suggest questions to ask a doctor, and NEVER invent values "
-        "not present in the source document. Clearly state this is informational and not a medical diagnosis."
+        "You are a clinical laboratory information assistant. Review only the extracted report content "
+        "or attached medical document provided. Explain findings in clear, patient-friendly terms, "
+        "suggest questions to ask a doctor, and NEVER invent values not present in the source document. "
+        "Clearly state this is informational and not a medical diagnosis."
     )
 
     llm_service = get_llm_service()
@@ -433,11 +487,11 @@ async def analyze_report_controller(
         analysis_text = await llm_service.generate_completion(
             messages=[{"role": "user", "content": prompt}],
             system_instruction=system_instr,
+            image_bytes=multimodal_bytes,
+            image_mime=multimodal_mime,
         )
     except LLMServiceException as e:
         ai_available = False
-        if e.status_code == 400:
-            raise HTTPException(status_code=400, detail=str(e))
         if markers:
             lines = [
                 f"### Document Extraction: {title}",
@@ -455,7 +509,7 @@ async def analyze_report_controller(
         else:
             analysis_text = (
                 f"### Report Inspection: {title}\n\n"
-                "Automated AI explanation is currently unavailable (OpenRouter is unconfigured or unreachable), "
+                "Automated AI explanation is currently unavailable (Google Gemini is unconfigured or unreachable), "
                 "and no machine-readable laboratory markers were found in this document."
             )
 
@@ -557,5 +611,5 @@ Return ONLY valid JSON."""
     except json.JSONDecodeError:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="OpenRouter returned malformed JSON for medicine explanation. Please try again.",
+            detail="Google Gemini returned malformed JSON for medicine explanation. Please try again.",
         )

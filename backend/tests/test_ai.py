@@ -1,13 +1,17 @@
+import os
 import pytest
 from unittest.mock import patch, AsyncMock
+from fastapi import HTTPException
 from services.intent_service import detect_intent, IntentType
-from services.llm_service import LLMService, LLMServiceException, is_free_model
-from services.document_service import extract_lab_markers, parse_prescription_text
+from services.llm_service import LLMService, LLMServiceException, get_configured_model
+from services.document_service import extract_lab_markers, parse_prescription_text, save_file_locally
+from database.mongodb import get_database
 from controllers.ai_controller import (
     chat_ai_controller,
     generate_diet_controller,
     generate_fitness_controller,
-    explain_medicine_controller
+    explain_medicine_controller,
+    analyze_report_controller,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -170,39 +174,19 @@ async def test_14_emergency_guidance():
     assert "911" in res["reply"] or "112" in res["reply"]
 
 
-# 14b. Paid model IDs & Gemini models rejected; non-Gemini free models accepted; missing API key gives clear error
-async def test_14b_paid_model_rejected_and_missing_key_error():
-    from services.llm_service import get_configured_models, VISION_MODELS
-
-    configured = get_configured_models()
-    assert len(configured) >= 1
-    for m in configured:
-        assert m.endswith(":free"), f"Configured model '{m}' must end with :free"
-        assert "gemini" not in m.lower(), f"Gemini model '{m}' must not be configured"
-    for vm in VISION_MODELS:
-        assert "gemini" not in vm.lower()
-
-    assert is_free_model("meta-llama/llama-3.3-70b-instruct:free") is True
-    assert is_free_model("openai/gpt-4o") is False
-    assert is_free_model("google/gemini-2.0-flash-exp:free") is False
+# 14b. Gemini configuration & missing API key gives clear error
+async def test_14b_gemini_config_and_missing_key_error():
+    configured = get_configured_model()
+    assert configured
+    assert "gemini" in configured.lower()
 
     llm = LLMService()
-    with patch("services.llm_service.get_api_key", return_value="test_key"):
-        with pytest.raises(LLMServiceException) as paid_exc:
-            await llm.generate_completion(
-                messages=[{"role": "user", "content": "hi"}],
-                override_model="openai/gpt-4o",
-            )
-        assert paid_exc.value.status_code == 400
-
-        with pytest.raises(LLMServiceException) as gemini_exc:
-            await llm.generate_completion(
-                messages=[{"role": "user", "content": "hi"}],
-                override_model="google/gemini-2.0-flash-exp:free",
-            )
-        assert gemini_exc.value.status_code == 400
-
     with patch("services.llm_service.get_api_key", return_value=""):
+        health = await llm.check_health()
+        assert health["service"] == "Google Gemini Developer API"
+        assert health["sdk"] == "google-genai"
+        assert health["api_key_configured"] is False
+
         with pytest.raises(LLMServiceException) as key_exc:
             await llm.generate_completion(messages=[{"role": "user", "content": "hi"}])
         assert key_exc.value.status_code == 401
@@ -210,4 +194,101 @@ async def test_14b_paid_model_rejected_and_missing_key_error():
 
         chat_res = await chat_ai_controller("test_user@healthpoint.app", "What is Python?")
         assert chat_res["ai_available"] is False
-        assert "openrouter_api_key" in chat_res["reply"].lower() or "unavailable" in chat_res["reply"].lower()
+        assert "gemini_api_key" in chat_res["reply"].lower() or "unavailable" in chat_res["reply"].lower()
+
+
+# 14c. Required prompt behaviors (greetings, general knowledge, health, and synthetic report)
+async def test_14c_prompt_behaviors_and_synthetic_report():
+    # 1 & 2. Greetings / Casual ("Hi", "How are you?") -> no medical disclaimer forced
+    for prompt_text, mock_reply in [
+        ("Hi", "Hi there! How can I help you today?"),
+        ("How are you?", "I'm doing well, thanks for asking! What can I help you with?"),
+        ("Explain what OCR is.", "OCR (Optical Character Recognition) converts images of text into machine-readable text."),
+    ]:
+        with patch(
+            "services.llm_service.LLMService.generate_completion",
+            new=AsyncMock(return_value=mock_reply),
+        ):
+            res = await chat_ai_controller("test_user@healthpoint.app", prompt_text)
+            assert res["ai_available"] is True
+            assert mock_reply in res["reply"]
+            assert "Disclaimer" not in res["reply"]
+
+    # 4 & 5. Health questions -> informational guidance with safety disclaimer
+    for health_q, mock_reply in [
+        ("How can I improve my sleep cycle?", "Keep a consistent wake time and limit caffeine late in the day."),
+        ("What is blood pressure?", "Blood pressure measures the force of blood pushing against artery walls."),
+    ]:
+        with patch(
+            "services.llm_service.LLMService.generate_completion",
+            new=AsyncMock(return_value=mock_reply),
+        ):
+            res = await chat_ai_controller("test_user@healthpoint.app", health_q)
+            assert res["ai_available"] is True
+            assert mock_reply in res["reply"]
+            assert "Disclaimer" in res["reply"]
+
+    # 6. Synthetic report analysis without fabrication + disclaimer
+    with patch(
+        "services.llm_service.LLMService.generate_completion",
+        new=AsyncMock(return_value="Review of uploaded synthetic panel: consult your physician for interpretation."),
+    ):
+        report_res = await analyze_report_controller(
+            user_email="test_user@healthpoint.app",
+            title="Synthetic Wellness Panel",
+            category="Lab Report",
+        )
+        assert report_res["ai_available"] is True
+        assert "Disclaimer" in report_res["analysis"]
+
+
+# 14d. Gemini multimodal image input + user record isolation
+async def test_14d_multimodal_image_report_and_record_isolation():
+    db = get_database()
+    if db is None:
+        pytest.skip("MongoDB connection not available")
+
+    png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+    stored_filename, local_path = save_file_locally(png_bytes, "lab_scan.png", folder="records")
+    inserted = await db.records.insert_one({
+        "user_email": "owner_img@healthpoint.app",
+        "title": "Lipid Panel Scan",
+        "category": "Lab Report",
+        "stored_filename": stored_filename,
+        "local_path": local_path,
+    })
+    record_id = str(inserted.inserted_id)
+
+    try:
+        captured = {}
+
+        async def mock_gen(self, **kwargs):
+            captured["image_bytes"] = kwargs.get("image_bytes")
+            captured["image_mime"] = kwargs.get("image_mime")
+            return "Synthetic image review: image received for inspection."
+
+        with patch("services.llm_service.LLMService.generate_completion", new=mock_gen):
+            res = await analyze_report_controller(
+                user_email="owner_img@healthpoint.app",
+                title="Lipid Panel Scan",
+                category="Lab Report",
+                record_id=record_id,
+            )
+            assert res["ai_available"] is True
+            assert captured.get("image_bytes") == png_bytes
+            assert captured.get("image_mime") == "image/png"
+            assert "Disclaimer" in res["analysis"]
+
+        # Another user must NOT be able to analyze or read owner's medical record
+        with pytest.raises(HTTPException) as unauth_exc:
+            await analyze_report_controller(
+                user_email="other_user@healthpoint.app",
+                title="Lipid Panel Scan",
+                category="Lab Report",
+                record_id=record_id,
+            )
+        assert unauth_exc.value.status_code == 404
+    finally:
+        await db.records.delete_one({"_id": inserted.inserted_id})
+        if os.path.exists(local_path):
+            os.remove(local_path)

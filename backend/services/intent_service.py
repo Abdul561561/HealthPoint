@@ -76,7 +76,7 @@ _PATTERNS = [
     (
         IntentType.CASUAL,
         re.compile(
-            r"^(tell me a joke|make me laugh|how are you|who are you|what can you do|what is your name|"
+            r"^(tell me a joke|make me laugh|how are you\??|who are you\??|what can you do\??|what is your name\??|"
             r"thank you|thanks|thanks a lot|bye|goodbye|see you|cool|awesome)[!.\s]*$",
             re.IGNORECASE
         ),
@@ -246,8 +246,10 @@ _PATTERNS = [
     (
         IntentType.HEALTH_INFO,
         re.compile(
-            r"\b(symptoms of|causes of|why do i have a headache|fever remedies|hypertension causes|"
-            r"how to lower cholesterol|benefits of water|how to sleep better|home remedies for)\b",
+            r"\b(symptoms of|causes of|why do i have a headache|fever remedies|hypertension|high blood pressure|"
+            r"what is blood pressure|blood pressure|how to lower cholesterol|benefits of water|"
+            r"how to sleep better|sleep cycle|sleep quality|improve.*sleep|insomnia|diabetes|"
+            r"heart disease|home remedies for)\b",
             re.IGNORECASE
         ),
         0.87
@@ -290,6 +292,7 @@ def detect_intent(message: str) -> Dict[str, Any]:
             )
             requires_disclaimer = intent in (
                 IntentType.HEALTH_INFO,
+                IntentType.PERSONAL_HEALTH,
                 IntentType.REPORT_ANALYSIS,
                 IntentType.MEDICINE_INFO
             )

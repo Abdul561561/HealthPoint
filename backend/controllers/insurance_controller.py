@@ -5,15 +5,15 @@ from fastapi import HTTPException, status
 from bson import ObjectId
 from database.mongodb import get_database
 from models.insurance import ClaimCreate, FavoriteHospitalRequest
-from services.llm_service import call_openrouter, call_openrouter_chat
+from services.llm_service import call_gemini, call_gemini_chat
 
 SYSTEM_DISCLAIMER = "\n\n> *Disclaimer: I am your AI Insurance Assistant. This guidance is for educational and informational purposes to help you navigate your healthcare policy. Estimates provided are informational and do not constitute an official claim decision or guarantee of coverage. Always refer to your official policy handbook.*"
 
 async def call_llm_with_fallback(system_instruction: str, prompt: str) -> str:
-    """Invokes OpenRouter LLM using the service with automatic model fallback."""
+    """Invokes Google Gemini LLM service with safe fallback handling."""
     try:
-        return await call_openrouter(system_instruction, prompt)
-    except Exception as e:
+        return await call_gemini(system_instruction, prompt)
+    except Exception:
         return "I am currently unable to connect to the AI claims assistant. Please refer to your plan documentation."
 
 # --- CLAIMS SYSTEM ---

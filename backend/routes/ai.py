@@ -60,7 +60,7 @@ class ToolExecuteRequest(BaseModel):
 
 @router.get("/health")
 async def get_ai_health():
-    """Returns runtime OpenRouter provider health and configured model identifiers."""
+    """Returns runtime Google Gemini provider health and configured model identifier."""
     llm = get_llm_service()
     return await llm.check_health()
 

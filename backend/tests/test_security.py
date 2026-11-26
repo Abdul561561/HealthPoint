@@ -67,12 +67,14 @@ async def test_17_no_api_keys_in_frontend():
         pytest.skip("Frontend dist build not found")
 
     openrouter_pattern = re.compile(r"sk-or-v1-[a-zA-Z0-9]{32,}", re.IGNORECASE)
+    gemini_pattern = re.compile(r"AIza[0-9A-Za-z_-]{30,}")
     for root, _, files in os.walk(dist_dir):
         for f in files:
             if f.endswith((".js", ".html", ".map")):
                 with open(os.path.join(root, f), "r", encoding="utf-8", errors="ignore") as bundle:
                     content = bundle.read()
                     assert not openrouter_pattern.search(content), f"Exposed OpenRouter key found in {f}!"
+                    assert not gemini_pattern.search(content), f"Exposed Gemini API key found in {f}!"
 
 
 # 18. Invalid uploads are rejected

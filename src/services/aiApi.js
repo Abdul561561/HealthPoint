@@ -1,10 +1,12 @@
 import api from './api';
 
+const AI_REQUEST_CONFIG = { timeout: 60000 };
+
 export const sendChatMessage = async (message, sessionId = null) => {
   const response = await api.post('/ai/chat', {
     message,
     session_id: sessionId
-  });
+  }, AI_REQUEST_CONFIG);
   return response.data;
 };
 
@@ -34,17 +36,17 @@ export const analyzeMedicalReport = async (title, category, url = null, recordId
     category,
     url,
     record_id: recordId
-  });
+  }, AI_REQUEST_CONFIG);
   return response.data;
 };
 
 export const generateDietPlan = async (dietData) => {
-  const response = await api.post('/ai/diet', dietData);
+  const response = await api.post('/ai/diet', dietData, AI_REQUEST_CONFIG);
   return response.data;
 };
 
 export const generateWorkoutPlan = async (fitnessData) => {
-  const response = await api.post('/ai/fitness', fitnessData);
+  const response = await api.post('/ai/fitness', fitnessData, AI_REQUEST_CONFIG);
   return response.data;
 };
 
@@ -52,7 +54,7 @@ export const explainMedicine = async (medicineName, genericName = null) => {
   const response = await api.post('/ai/medicine-explain', {
     medicine_name: medicineName,
     generic_name: genericName,
-  });
+  }, AI_REQUEST_CONFIG);
   return response.data;
 };
 
