@@ -141,8 +141,8 @@ async def test_normal_user_cannot_access_admin():
         await db.users.delete_one({"email": email})
 
 
-# 20d. Cross-user consultation notes and insurance chat isolation
-async def test_cross_user_consultation_and_insurance_isolation():
+# 20d. Cross-user workout and insurance chat isolation
+async def test_cross_user_workout_and_insurance_isolation():
     db = get_database()
     if db is None:
         pytest.skip("MongoDB connection unavailable")
@@ -160,20 +160,26 @@ async def test_cross_user_consultation_and_insurance_isolation():
     )
     ins_id = str(ins_sess.inserted_id)
 
+    workout_a = await db.workouts.insert_one(
+        {"user_email": user_a, "name": "Private Cardio", "type": "Cardio", "duration": 20, "calories": 150, "completed": False, "date": "2026-11-27"}
+    )
+    workout_id = str(workout_a.inserted_id)
+
     token_b = create_access_token({"sub": user_b, "role": "Patient"})
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        notes_res = await client.get(
-            f"/api/consultations/notes/{user_a}",
+        upd_res = await client.put(
+            f"/api/fitness/workouts/{workout_id}",
+            json={"completed": True},
             headers={"Authorization": f"Bearer {token_b}"},
         )
-        assert notes_res.status_code == 403
+        assert upd_res.status_code == 404
 
-        bio_res = await client.get(
-            f"/api/consultations/biometrics/{user_a}",
+        del_res = await client.delete(
+            f"/api/fitness/workouts/{workout_id}",
             headers={"Authorization": f"Bearer {token_b}"},
         )
-        assert bio_res.status_code == 403
+        assert del_res.status_code == 404
 
         ins_res = await client.post(
             "/api/insurance/chat",
@@ -182,6 +188,7 @@ async def test_cross_user_consultation_and_insurance_isolation():
         )
         assert ins_res.status_code == 404
 
+    await db.workouts.delete_one({"_id": workout_a.inserted_id})
     await db.aiInsuranceChats.delete_one({"_id": ins_sess.inserted_id})
     await db.users.delete_many({"email": {"$in": [user_a, user_b]}})
 

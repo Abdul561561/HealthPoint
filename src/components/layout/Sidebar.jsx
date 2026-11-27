@@ -1,11 +1,10 @@
-import React from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSelector, useDispatch } from 'react-redux';
 import {
   LayoutDashboard, UserCheck, ShoppingBag, Bot, FileText,
   Dumbbell, Shield, Apple, AlertTriangle, Settings, User,
-  ChevronLeft, ChevronRight, Activity, X, Video, TrendingUp, Clock
+  ChevronLeft, ChevronRight, Activity, X, TrendingUp, Clock, Bell
 } from 'lucide-react';
 import { toggleSidebarCollapse, setSidebarOpen } from '../../redux/slices/uiSlice';
 import { useAuth } from '../../hooks/useAuth';
@@ -22,6 +21,8 @@ const navItems = [
   { path: '/fitness', label: 'Fitness & Gym', icon: Dumbbell },
   { path: '/insurance', label: 'Insurance', icon: Shield },
   { path: '/nutrition', label: 'Nutrition', icon: Apple },
+  { path: '/vitals', label: 'Daily Vitals', icon: Activity },
+  { path: '/notifications', label: 'Notifications', icon: Bell },
   { path: '/emergency', label: 'Emergency SOS', icon: AlertTriangle, danger: true },
 ];
 
@@ -43,11 +44,6 @@ export default function Sidebar() {
     ...(isAdmin ? [{ path: '/admin', label: 'Admin Command', icon: Shield }] : []),
     ...navItems.filter(item => item.path !== '/dashboard')
   ];
-
-  const sidebarVariants = {
-    open: { x: 0, opacity: 1 },
-    closed: { x: '-100%', opacity: 0 },
-  };
 
   return (
     <>

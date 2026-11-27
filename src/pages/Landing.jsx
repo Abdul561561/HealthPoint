@@ -29,7 +29,7 @@ const features = [
   {
     icon: UserCheck,
     title: 'Find Nearby Doctors',
-    desc: 'Discover verified specialists near you, check real-time availability, and book appointments in under 2 minutes.',
+    desc: 'Discover verified specialists near you, filter by specialty, and get turn-by-turn routes to nearby clinics.',
     color: 'cyan',
     gradient: 'from-cyan-500 to-blue-600',
     bg: 'bg-cyan-500/10',
@@ -111,7 +111,7 @@ const testimonials = [
     name: 'Dr. Rajesh Nair',
     role: 'Cardiologist, Mumbai',
     avatar: 'RN',
-    text: 'As a doctor, I recommend HealthPoint to all my patients. The health analytics section gives them real insights. The appointment management system has streamlined my practice significantly.',
+    text: 'As a doctor, I recommend HealthPoint to all my patients. The health analytics section gives them real insights and keeps all their records and prescriptions organized cleanly.',
     rating: 5,
     color: 'from-blue-500 to-indigo-600',
   },
@@ -147,16 +147,16 @@ const faqs = [
     a: 'We use bank-level AES-256 encryption for all stored data, JWT-secured authentication, and follow strict data privacy standards. Your health data is never shared without your explicit consent.',
   },
   {
-    q: 'Can I book doctor appointments through HealthPoint?',
-    a: 'Yes. You can browse verified doctors by specialty, location, and availability, and book in-person or online consultations directly through the platform.',
+    q: 'Can I discover nearby doctors through HealthPoint?',
+    a: 'Yes. You can browse verified doctors by specialty, location, and clinic details, call clinics directly, and view turn-by-turn routes on our interactive map.',
   },
   {
     q: 'Is HealthPoint free to use?',
-    a: 'HealthPoint offers a full-featured free tier. Premium features such as advanced AI analytics, unlimited records storage, and priority doctor appointments are available on our paid plans.',
+    a: 'HealthPoint offers a full-featured free tier including AI health guidance, medical records management, pharmacy tracking, and nearby doctor discovery.',
   },
   {
     q: 'How does the Emergency SOS feature work?',
-    a: 'When you trigger the SOS, the app immediately notifies your emergency contacts with your GPS location, dials emergency services, and displays the nearest hospitals on a map.',
+    a: 'When you trigger the SOS, the app records your distress alert with GPS coordinates, gives quick emergency helplines, and displays the nearest hospitals on a map.',
   },
 ];
 
@@ -164,7 +164,7 @@ const statsData = [
   { value: 2000000, display: '2M+', label: 'Registered Users', icon: Globe, suffix: '' },
   { value: 50000, display: '50K+', label: 'Verified Doctors', icon: UserCheck, suffix: '' },
   { value: 5000000, display: '50L+', label: 'Reports Managed', icon: FileText, suffix: '' },
-  { value: 1200000, display: '12L+', label: 'Appointments Booked', icon: Clock, suffix: '' },
+  { value: 1200000, display: '12L+', label: 'AI Insights Delivered', icon: Clock, suffix: '' },
 ];
 
 /* ─────────────── COUNTER ─────────────── */
@@ -403,7 +403,7 @@ export default function Landing() {
                 transition={{ delay: 0.3 }}
                 className="text-lg text-slate-400 max-w-xl leading-relaxed"
               >
-                Monitor vitals, consult top doctors, manage prescriptions, track fitness, handle insurance claims — all in one intelligent, secure platform built for India.
+                Monitor vitals, discover top doctors, manage prescriptions, track fitness, handle insurance claims — all in one intelligent, secure platform built for India.
               </motion.p>
 
               {/* CTAs */}
@@ -541,7 +541,7 @@ export default function Landing() {
                   </div>
                 </motion.div>
 
-                {/* Floating card 3 - Appointment */}
+                {/* Floating card 3 - Doctor Discovery */}
                 <motion.div
                   animate={{ y: [0, -7, 0] }}
                   transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
@@ -551,7 +551,7 @@ export default function Landing() {
                     <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                     <div>
                       <div className="text-white font-bold text-xs">Dr. Priya Nair</div>
-                      <div className="text-[10px] text-slate-400">Today, 4:30 PM</div>
+                      <div className="text-[10px] text-slate-400">Cardiology · 1.2 km away</div>
                     </div>
                   </div>
                 </motion.div>
@@ -669,7 +669,7 @@ export default function Landing() {
 
             {[
               { step: '01', title: 'Create Your Profile', desc: 'Sign up and fill in your health profile — vitals, medical history, blood group, and emergency contacts.', icon: UserCheck, gradient: 'from-indigo-500 to-violet-600' },
-              { step: '02', title: 'Connect Your Health Data', desc: 'Log your daily vitals, book doctor appointments, order medicines, and upload medical records securely.', icon: Activity, gradient: 'from-cyan-500 to-blue-600' },
+              { step: '02', title: 'Connect Your Health Data', desc: 'Log your daily vitals, discover nearby specialists, order medicines, and upload medical records securely.', icon: Activity, gradient: 'from-cyan-500 to-blue-600' },
               { step: '03', title: 'Get AI-Powered Insights', desc: 'Our AI analyzes your data, predicts health risks, and gives you personalized recommendations to stay healthy.', icon: Sparkles, gradient: 'from-emerald-500 to-teal-600' },
             ].map((item, i) => (
               <motion.div

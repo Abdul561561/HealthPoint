@@ -9,7 +9,6 @@ import { useAuth } from '../hooks/useAuth';
 import api from '../services/api';
 
 const DEFAULT_NOTIFICATIONS = {
-  appointmentReminders: true,
   medicationAlerts: true,
   healthTips: false,
   emergencyAlerts: true,
@@ -156,7 +155,7 @@ export default function Settings() {
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
                   activeSection === sec.id
                     ? 'bg-primary-600 text-white shadow-glow-primary'
-                    : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-350 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200/50 dark:border-white/5'
+                    : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200/50 dark:border-white/5'
                 }`}
               >
                 <Icon className="w-5 h-5 flex-shrink-0" />
@@ -174,12 +173,12 @@ export default function Settings() {
             {activeSection === 'general' && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white pb-3 border-b border-slate-250/50 dark:border-white/5">General Preferences</h3>
-                  <p className="text-xs text-slate-450 mt-1">Customize your theme interface settings.</p>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white pb-3 border-b border-slate-200/50 dark:border-white/5">General Preferences</h3>
+                  <p className="text-xs text-slate-400 mt-1">Customize your theme interface settings.</p>
                 </div>
 
                 {/* Theme toggle */}
-                <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-150 dark:border-white/5">
+                <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5">
                   <div className="space-y-1">
                     <h4 className="text-sm font-bold text-slate-900 dark:text-white">Display Theme</h4>
                     <p className="text-xs text-slate-400">Switch between light and dark display mode.</p>
@@ -197,7 +196,7 @@ export default function Settings() {
                 </div>
 
                 {/* Account info */}
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-150 dark:border-white/5 space-y-2">
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 space-y-2">
                   <h4 className="text-sm font-bold text-slate-900 dark:text-white">Account</h4>
                   <p className="text-xs text-slate-500 dark:text-slate-400">Logged in as <span className="font-semibold text-primary-500">{user?.email || 'N/A'}</span></p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">Member since <span className="font-semibold">{user?.memberSince || 'N/A'}</span></p>
@@ -220,20 +219,19 @@ export default function Settings() {
             {activeSection === 'notifications' && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white pb-3 border-b border-slate-250/50 dark:border-white/5">Notification Preferences</h3>
-                  <p className="text-xs text-slate-450 mt-1">All changes are saved automatically to your account.</p>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white pb-3 border-b border-slate-200/50 dark:border-white/5">Notification Preferences</h3>
+                  <p className="text-xs text-slate-400 mt-1">All changes are saved automatically to your account.</p>
                 </div>
 
                 <div className="space-y-4">
                   {[
-                    { key: 'appointmentReminders', label: 'Appointment Reminders', desc: 'Get notified 24 hours prior to booking slot.' },
                     { key: 'medicationAlerts', label: 'Medication Alerts', desc: 'Get daily reminders for scheduled prescriptions.' },
                     { key: 'emergencyAlerts', label: 'SOS & Emergency Alerts', desc: 'Broadcast notifications during active alarm distress.' },
                     { key: 'healthTips', label: 'Health & Wellness Tips', desc: 'Receive AI generated diet recommendations.' },
                     { key: 'weeklyReport', label: 'Weekly Summary Report', desc: 'Summary of heart rate, steps, and sleep statistics.' },
                     { key: 'marketingEmails', label: 'Promotional Offers', desc: 'Discount coupon codes on pharmacy checkouts.' }
                   ].map((item) => (
-                    <div key={item.key} className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-150 dark:border-white/5">
+                    <div key={item.key} className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5">
                       <div className="space-y-0.5 min-w-0 pr-4">
                         <h4 className="text-sm font-bold text-slate-900 dark:text-white">{item.label}</h4>
                         <p className="text-xs text-slate-400 truncate">{item.desc}</p>
@@ -258,8 +256,8 @@ export default function Settings() {
             {activeSection === 'security' && (
               <form onSubmit={handleChangePassword} className="space-y-6">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white pb-3 border-b border-slate-250/50 dark:border-white/5">Security & Password</h3>
-                  <p className="text-xs text-slate-450 mt-1">Update passwords and secure credentials. All changes are saved to your account.</p>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white pb-3 border-b border-slate-200/50 dark:border-white/5">Security & Password</h3>
+                  <p className="text-xs text-slate-400 mt-1">Update passwords and secure credentials. All changes are saved to your account.</p>
                 </div>
 
                 <div className="space-y-4">
@@ -308,7 +306,7 @@ export default function Settings() {
                   </div>
 
                   {/* 2FA switch */}
-                  <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-150 dark:border-white/5 mt-4">
+                  <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 mt-4">
                     <div className="space-y-0.5">
                       <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                         <Shield className="w-4 h-4 text-emerald-500" />

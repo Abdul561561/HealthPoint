@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Users, UserCheck, ShoppingBag, Bot, FileText, Calendar,
+  Users, UserCheck, ShoppingBag, Bot, FileText,
   Settings, DollarSign, Search, RefreshCw, Trash2, Edit, Plus,
   X, Check, Eye, AlertTriangle, Activity, Heart, Thermometer,
   Shield, CheckCircle, ArrowRight, ShieldAlert, ShoppingCart
@@ -11,7 +11,6 @@ import {
   getAdminStats, getAdminUsers, editAdminUser, removeAdminUser,
   getAdminDoctors, addAdminDoctor, editAdminDoctor, removeAdminDoctor,
   getAdminMedicines, addAdminMedicine, editAdminMedicine, removeAdminMedicine,
-  getAdminAppointments, editAdminAppointment, removeAdminAppointment,
   getAdminAIChats, getAdminReports, editAdminReportStatus
 } from '../redux/slices/adminSlice';
 import { formatCurrency } from '../utils/helpers';
@@ -29,7 +28,7 @@ export default function AdminDashboard() {
   const dispatch = useDispatch();
   const { isDark } = useTheme();
   const {
-    dashboard, users, doctors, medicines, appointments, aiChats, reports, loading, error
+    dashboard, users, doctors, medicines, aiChats, reports, loading, error
   } = useSelector((state) => state.admin);
 
   // Active Tab State
@@ -39,7 +38,6 @@ export default function AdminDashboard() {
   const [userSearch, setUserSearch] = useState('');
   const [docSearch, setDocSearch] = useState('');
   const [medSearch, setMedSearch] = useState('');
-  const [apptSearch, setApptSearch] = useState('');
   const [reportFilter, setReportFilter] = useState('all');
 
   // Modal States
@@ -54,7 +52,6 @@ export default function AdminDashboard() {
     dispatch(getAdminUsers());
     dispatch(getAdminDoctors());
     dispatch(getAdminMedicines());
-    dispatch(getAdminAppointments());
     dispatch(getAdminAIChats());
     dispatch(getAdminReports());
   }, [dispatch]);
@@ -64,7 +61,6 @@ export default function AdminDashboard() {
     dispatch(getAdminUsers());
     dispatch(getAdminDoctors());
     dispatch(getAdminMedicines());
-    dispatch(getAdminAppointments());
     dispatch(getAdminAIChats());
     dispatch(getAdminReports());
   };
@@ -198,17 +194,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // Appointment Actions
-  const handleUpdateApptStatus = (apptId, status) => {
-    dispatch(editAdminAppointment({ apptId, data: { status } })).then(() => dispatch(getAdminStats()));
-  };
-
-  const handleDeleteAppt = (id) => {
-    if (window.confirm("Delete this appointment slot?")) {
-      dispatch(removeAdminAppointment(id)).then(() => dispatch(getAdminStats()));
-    }
-  };
-
   // Report & Prescriptions verification status
   const handleVerifyReport = (id, status) => {
     dispatch(editAdminReportStatus({ reportId: id, status })).then(() => {
@@ -235,11 +220,6 @@ export default function AdminDashboard() {
     m.genericName?.toLowerCase().includes(medSearch.toLowerCase())
   );
 
-  const filteredAppts = appointments.filter(a =>
-    a.user_email?.toLowerCase().includes(apptSearch.toLowerCase()) ||
-    a.doctor?.toLowerCase().includes(apptSearch.toLowerCase())
-  );
-
   const filteredReports = reports.filter(r => {
     if (reportFilter === 'all') return true;
     if (reportFilter === 'records') return r.reportType === 'Medical Record';
@@ -260,7 +240,6 @@ export default function AdminDashboard() {
           { id: 'users', label: 'Manage Patients', icon: Users },
           { id: 'doctors', label: 'Manage Doctors', icon: UserCheck },
           { id: 'medicines', label: 'Medicine Catalog', icon: ShoppingBag },
-          { id: 'appointments', label: 'Appointments Control', icon: Calendar },
           { id: 'aiLogs', label: 'AI Monitoring', icon: Bot },
           { id: 'reports', label: 'Reports Verification', icon: FileText }
         ].map(tab => {
@@ -349,10 +328,8 @@ export default function AdminDashboard() {
                   <div className="space-y-4">
                     {dashboard?.recentActivities?.map((act, i) => (
                       <div key={i} className="flex gap-3 items-start">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                          act.type === 'appointment' ? 'bg-primary-500/10 text-primary-500' : 'bg-green-500/10 text-green-500'
-                        }`}>
-                          {act.type === 'appointment' ? <Calendar className="w-4 h-4" /> : <ShoppingCart className="w-4 h-4" />}
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-green-500/10 text-green-500">
+                          <ShoppingCart className="w-4 h-4" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 leading-normal">{act.desc}</p>
@@ -423,7 +400,7 @@ export default function AdminDashboard() {
                         <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${
                           u.role === 'admin'
                             ? 'text-cyan-500 bg-cyan-500/10 border-cyan-500/20'
-                            : 'text-slate-500 bg-slate-150 border-slate-200 dark:text-slate-400'
+                            : 'text-slate-500 bg-slate-200 border-slate-200 dark:text-slate-400'
                         }`}>
                           {u.role || 'patient'}
                         </span>
@@ -603,8 +580,8 @@ export default function AdminDashboard() {
                         <p className="font-bold text-slate-900 dark:text-white">{m.name}</p>
                         <p className="text-xs text-slate-400 mt-0.5">{m.brand} · Generic: {m.genericName}</p>
                       </td>
-                      <td className="p-4 text-slate-650 dark:text-slate-350">{m.category}</td>
-                      <td className="p-4 font-bold text-slate-850 dark:text-slate-150">₹{m.price}</td>
+                      <td className="p-4 text-slate-600 dark:text-slate-300">{m.category}</td>
+                      <td className="p-4 font-bold text-slate-800 dark:text-slate-100">₹{m.price}</td>
                       <td className="p-4">
                         <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${
                           m.inStock
@@ -648,100 +625,7 @@ export default function AdminDashboard() {
         )}
 
         {/* ────────────────────────────────────────────────────────────────────
-            TAB 5: Appointments Control
-            ──────────────────────────────────────────────────────────────────── */}
-        {activeTab === 'appointments' && (
-          <div className="glass-card p-6 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h3 className="section-title text-base font-bold">Scheduled Appointments Master List</h3>
-                <p className="section-subtitle">Confirm, cancel, or delete appointments across HealthPoint</p>
-              </div>
-              <div className="relative">
-                <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search by email or doctor..."
-                  value={apptSearch}
-                  onChange={(e) => setApptSearch(e.target.value)}
-                  className="w-56 pl-9 pr-4 py-2 text-sm rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-slate-900 dark:text-white focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="overflow-x-auto rounded-2xl border border-slate-100 dark:border-white/5">
-              <table className="w-full text-left border-collapse text-sm">
-                <thead>
-                  <tr className="bg-slate-50 dark:bg-white/5 text-slate-400 font-bold border-b border-slate-100 dark:border-white/5">
-                    <th className="p-4">Patient Email</th>
-                    <th className="p-4">Doctor & Specialty</th>
-                    <th className="p-4">Schedule</th>
-                    <th className="p-4">Status / Type</th>
-                    <th className="p-4 text-right">Quick Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                  {filteredAppts.map(a => (
-                    <tr key={a.id}>
-                      <td className="p-4 font-semibold text-slate-900 dark:text-white">{a.user_email}</td>
-                      <td className="p-4">
-                        <p className="font-bold text-slate-800 dark:text-slate-200">{a.doctor}</p>
-                        <p className="text-xs text-slate-400">{a.specialty} · {a.hospital}</p>
-                      </td>
-                      <td className="p-4 text-xs text-slate-600 dark:text-slate-400">
-                        <p>{a.date}</p>
-                        <p className="mt-0.5">{a.time}</p>
-                      </td>
-                      <td className="p-4 text-xs">
-                        <span className={`px-2 py-0.5 rounded-full font-bold border inline-block ${
-                          a.status === 'confirmed'
-                            ? 'text-green-500 bg-green-500/10 border-green-500/20'
-                            : a.status === 'pending'
-                            ? 'text-yellow-500 bg-yellow-500/10 border-yellow-500/20'
-                            : 'text-red-500 bg-red-500/10 border-red-500/20'
-                        }`}>
-                          {a.status}
-                        </span>
-                        <p className="text-slate-400 mt-1">{a.type}</p>
-                      </td>
-                      <td className="p-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {a.status !== 'confirmed' && (
-                            <button
-                              onClick={() => handleUpdateApptStatus(a.id, 'confirmed')}
-                              className="p-1.5 rounded-lg bg-green-500/10 hover:bg-green-500/20 text-green-600 border border-green-500/20"
-                              title="Confirm Appointment"
-                            >
-                              <Check className="w-4 h-4" />
-                            </button>
-                          )}
-                          {a.status !== 'cancelled' && (
-                            <button
-                              onClick={() => handleUpdateApptStatus(a.id, 'cancelled')}
-                              className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-650 border border-red-500/20"
-                              title="Cancel Slot"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          )}
-                          <button
-                            onClick={() => handleDeleteAppt(a.id)}
-                            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 text-slate-400 hover:text-slate-800 dark:hover:text-white"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* ────────────────────────────────────────────────────────────────────
-            TAB 6: AI Monitor
+            TAB 5: AI Monitor
             ──────────────────────────────────────────────────────────────────── */}
         {activeTab === 'aiLogs' && (
           <div className="glass-card p-6 space-y-4">
@@ -800,7 +684,7 @@ export default function AdminDashboard() {
                     onClick={() => setReportFilter(filter)}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
                       reportFilter === filter
-                        ? 'bg-primary-600 text-white border-primary-650'
+                        ? 'bg-primary-600 text-white border-primary-600'
                         : 'text-slate-600 dark:text-slate-400 border-slate-200 dark:border-white/10 hover:bg-slate-50'
                     }`}
                   >
@@ -837,7 +721,7 @@ export default function AdminDashboard() {
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between text-xs pt-3 border-t border-slate-150 dark:border-white/5">
+                  <div className="flex items-center justify-between text-xs pt-3 border-t border-slate-200 dark:border-white/5">
                     <span className="text-slate-400">Date: {report.date}</span>
                     <button
                       onClick={() => setReportModal({ open: true, data: report })}
@@ -1205,7 +1089,7 @@ export default function AdminDashboard() {
             <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">AI Conversational Audit Log</h3>
             <p className="text-xs text-slate-400 mb-4">Inspection account: {chatModal.email}</p>
             
-            <div className="flex-1 overflow-y-auto space-y-3.5 p-3 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-150 dark:border-white/5 max-h-[450px]">
+            <div className="flex-1 overflow-y-auto space-y-3.5 p-3 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 max-h-[450px]">
               {chatModal.messages.map((msg, idx) => {
                 const isAI = msg.role === 'model' || msg.role === 'assistant';
                 return (
@@ -1258,7 +1142,7 @@ export default function AdminDashboard() {
               {reportModal.data.url && (
                 <div className="space-y-2">
                   <span className="text-xs text-slate-400 block font-bold">Uploaded Image Attachment:</span>
-                  <div className="w-full h-44 rounded-xl border border-slate-150 overflow-hidden bg-slate-100 flex items-center justify-center">
+                  <div className="w-full h-44 rounded-xl border border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center">
                     <img
                       src={reportModal.data.url}
                       alt="Uploaded Prescription"
@@ -1289,7 +1173,7 @@ export default function AdminDashboard() {
                   </button>
                   <button
                     onClick={() => handleVerifyReport(reportModal.data.id, 'rejected')}
-                    className="py-2.5 px-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-650 font-bold border border-red-500/20 text-xs text-center"
+                    className="py-2.5 px-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-600 font-bold border border-red-500/20 text-xs text-center"
                   >
                     Reject Scan
                   </button>

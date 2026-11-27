@@ -1,15 +1,15 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  Shield, Calendar, FileText, CheckCircle, Clock, AlertTriangle, 
-  ChevronRight, ArrowUpRight, DollarSign, Download, Plus, Search, Filter,
+import { Fragment, useState, useEffect, useRef, useCallback } from 'react';
+import {
+  Shield, FileText, Clock, AlertTriangle,
+  ChevronRight, ArrowUpRight, Download, Plus, Search, Filter,
   MessageSquare, MapPin, Phone, Activity, Star, Navigation, Send,
-  Bookmark, Info, HelpCircle, Loader2, Sparkles, Check, AlertCircle, Trash2
+  Bookmark, HelpCircle, Loader2, Sparkles, Check, AlertCircle, Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../services/api';
 import { useDispatch } from 'react-redux';
 import { addToast } from '../redux/slices/uiSlice';
-import { searchNearbyHospitals, searchAddress, getRoute } from '../services/openMapsApi';
+import { searchNearbyHospitals, getRoute } from '../services/openMapsApi';
 
 export default function Insurance() {
   const dispatch = useDispatch();
@@ -37,7 +37,7 @@ export default function Insurance() {
   const [claimDate, setClaimDate] = useState('');
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [analyzingClaimId, setAnalyzingClaimId] = useState(null);
-  const [claimAuditorResult, setClaimAuditorResult] = useState(null);
+  const [, setClaimAuditorResult] = useState(null);
   const [expandedClaimId, setExpandedClaimId] = useState(null);
 
   // AI Assistant Chatbot states
@@ -77,23 +77,20 @@ export default function Insurance() {
   // INITIALIZATIONS
   // ----------------------------------------------------
 
-  // Geolocation detection
+  // Geolocation detection (never silently fabricate a default city)
   useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         pos => setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
         () => {
-          setCoords({ lat: 12.9716, lng: 77.5946 }); // Bengaluru default
-          dispatch(addToast({ 
-            title: 'Location Service', 
-            message: 'Defaulting map coordinates to Bengaluru center.', 
-            type: 'info' 
+          dispatch(addToast({
+            title: 'Location Access Needed',
+            message: 'Allow GPS or enter a city/PIN in the Hospital Network tab.',
+            type: 'info'
           }));
         },
         { timeout: 8000 }
       );
-    } else {
-      setCoords({ lat: 12.9716, lng: 77.5946 });
     }
   }, [dispatch]);
 
@@ -133,7 +130,9 @@ export default function Insurance() {
   }, []);
 
   useEffect(() => {
-    fetchDashboardData();
+    Promise.resolve().then(() => {
+      fetchDashboardData();
+    });
   }, [fetchDashboardData]);
 
   // Scroll chat window to bottom
@@ -153,13 +152,9 @@ export default function Insurance() {
         attributionControl: false
       }).setView([coords.lat, coords.lng], 13);
 
-      const isDarkMode = document.documentElement.classList.contains('dark');
-      const tileUrl = isDarkMode 
-        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-        : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-      window.L.tileLayer(tileUrl, {
+      window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
-        attribution: isDarkMode ? '&copy; OpenStreetMap &copy; CARTO' : '&copy; OpenStreetMap'
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
       }).addTo(mapInstanceRef.current);
 
       window.L.control.zoom({ position: 'bottomright' }).addTo(mapInstanceRef.current);
@@ -197,10 +192,11 @@ export default function Insurance() {
       setHospitals(results);
     } catch (err) {
       console.error(err);
-      dispatch(addToast({ 
-        title: 'Network Hospital Finder', 
-        message: 'Could not fetch hospitals from Overpass API. Displaying metropolitan defaults.', 
-        type: 'error' 
+      setHospitals([]);
+      dispatch(addToast({
+        title: 'Hospital Finder',
+        message: err.message || 'Could not fetch hospitals from OpenStreetMap right now.',
+        type: 'error'
       }));
     } finally {
       setMapLoading(false);
@@ -209,7 +205,9 @@ export default function Insurance() {
 
   useEffect(() => {
     if (activeTab === 'map') {
-      fetchHospitals();
+      Promise.resolve().then(() => {
+        fetchHospitals();
+      });
     }
   }, [activeTab, fetchHospitals]);
 
@@ -340,7 +338,7 @@ export default function Insurance() {
   // ----------------------------------------------------
   
   // Fetch plans with filters
-  const fetchFilteredPlans = async () => {
+  const fetchFilteredPlans = useCallback(async () => {
     setPlansLoading(true);
     try {
       const res = await api.get('/insurance/plans', {
@@ -356,11 +354,13 @@ export default function Insurance() {
     } finally {
       setPlansLoading(false);
     }
-  };
+  }, [demoFilter, budgetFilter, cashlessFilter]);
 
   useEffect(() => {
-    fetchFilteredPlans();
-  }, [demoFilter, budgetFilter, cashlessFilter]);
+    Promise.resolve().then(() => {
+      fetchFilteredPlans();
+    });
+  }, [fetchFilteredPlans]);
 
   // Save plan to dashboard
   const savePlan = async (planId) => {
@@ -709,7 +709,7 @@ export default function Insurance() {
                         const currentIdx = statuses.indexOf(userClaims[0].status);
                         const isDone = idx <= currentIdx;
                         return (
-                          <React.Fragment key={step}>
+                          <Fragment key={step}>
                             {idx > 0 && (
                               <div className={`flex-1 h-1 rounded ${isDone ? 'bg-primary-500' : 'bg-slate-200 dark:bg-white/10'}`} />
                             )}
@@ -723,7 +723,7 @@ export default function Insurance() {
                               </div>
                               <span className="text-[9px] font-bold text-slate-400 absolute top-7 whitespace-nowrap">{step}</span>
                             </div>
-                          </React.Fragment>
+                          </Fragment>
                         );
                       })}
                     </div>
@@ -974,7 +974,7 @@ export default function Insurance() {
                           {/* Benefits */}
                           <div className="space-y-1.5">
                             <span className="text-[10px] font-black uppercase text-slate-400">Benefits:</span>
-                            <ul className="space-y-1 text-xs text-slate-600 dark:text-slate-350">
+                            <ul className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
                               {plan.benefits.map((b, idx) => (
                                 <li key={idx} className="flex items-start gap-1.5">
                                   <Check className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0 mt-0.5" />
@@ -987,7 +987,7 @@ export default function Insurance() {
                           {/* Exclusions */}
                           <div className="space-y-1.5">
                             <span className="text-[10px] font-black uppercase text-slate-400">Key Exclusions:</span>
-                            <ul className="space-y-1 text-xs text-slate-600 dark:text-slate-350">
+                            <ul className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
                               {plan.exclusions.map((exc, idx) => (
                                 <li key={idx} className="flex items-start gap-1.5">
                                   <AlertCircle className="w-3.5 h-3.5 text-rose-500 flex-shrink-0 mt-0.5" />
@@ -1216,7 +1216,7 @@ export default function Insurance() {
                                     <a 
                                       href={doc.file_url} 
                                       download 
-                                      className="p-1 rounded bg-slate-200 hover:bg-slate-350 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-400 hover:text-white"
+                                      className="p-1 rounded bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-400 hover:text-white"
                                     >
                                       <Download className="w-3.5 h-3.5" />
                                     </a>
@@ -1446,7 +1446,7 @@ export default function Insurance() {
                               className={`flex-1 py-1.5 rounded-lg text-[10px] font-black flex items-center justify-center gap-1 border ${
                                 activeRouteId === hosp.id
                                   ? 'bg-indigo-600 border-indigo-600 text-white'
-                                  : 'bg-slate-200 hover:bg-slate-350 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-transparent'
+                                  : 'bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-transparent'
                               }`}
                             >
                               <Navigation className="w-3 h-3" />
@@ -1456,7 +1456,7 @@ export default function Insurance() {
                             <a 
                               href={`tel:${hosp.phone}`} 
                               onClick={e => e.stopPropagation()}
-                              className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-350 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg flex items-center justify-center"
+                              className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg flex items-center justify-center"
                             >
                               <Phone className="w-3.5 h-3.5" />
                             </a>

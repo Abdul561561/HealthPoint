@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Dumbbell, Flame, Clock, Play, CheckCircle, Plus, TrendingUp, Timer, Sparkles, RefreshCw } from 'lucide-react';
+import { Dumbbell, Flame, Clock, Play, CheckCircle, Plus, TrendingUp, Timer, Sparkles, RefreshCw, Trash2 } from 'lucide-react';
 import { FITNESS_TYPES } from '../utils/constants';
 
 const exercises = [
@@ -14,7 +14,8 @@ import Badge from '../components/ui/Badge';
 import CalorieChart from '../components/charts/CalorieChart';
 import { generateWorkoutPlan } from '../services/aiApi';
 import { useDispatch, useSelector } from 'react-redux';
-import { fetchHealthData, logFitnessWorkout } from '../redux/slices/healthSlice';
+import { fetchHealthData, logFitnessWorkout, completeFitnessWorkout, deleteFitnessWorkout } from '../redux/slices/healthSlice';
+import { addToast } from '../redux/slices/uiSlice';
 import StructuredResponse from '../components/StructuredResponse';
 
 function ProgressRing({ value, max, color, size = 80, label, sublabel }) {
@@ -84,6 +85,7 @@ export default function Fitness() {
   const filteredWorkouts = workouts.filter(w => filter === 'All' || w.type === filter);
   const totalCalories = workouts.reduce((s, w) => s + (w.completed ? w.calories : 0), 0);
   const totalMinutes = workouts.reduce((s, w) => s + (w.completed ? w.duration : 0), 0);
+  const activeDays = new Set(workouts.filter(w => w.completed && w.date).map(w => w.date)).size;
 
   const handleLogSubmit = async (e) => {
     e.preventDefault();
@@ -108,8 +110,33 @@ export default function Fitness() {
         date: new Date().toISOString().split('T')[0]
       });
       setLogModalOpen(false);
+      dispatch(fetchHealthData());
+      dispatch(addToast({ type: 'success', message: 'Workout logged successfully.' }));
     } catch (err) {
       console.error("Failed to log workout:", err);
+      dispatch(addToast({ type: 'error', message: 'Failed to log workout.' }));
+    }
+  };
+
+  const handleCompleteWorkout = async (workoutId) => {
+    try {
+      await dispatch(completeFitnessWorkout(workoutId)).unwrap();
+      dispatch(fetchHealthData());
+      dispatch(addToast({ type: 'success', message: 'Workout marked as completed!' }));
+    } catch (err) {
+      console.error("Failed to complete workout:", err);
+      dispatch(addToast({ type: 'error', message: 'Failed to update workout.' }));
+    }
+  };
+
+  const handleDeleteWorkout = async (workoutId) => {
+    try {
+      await dispatch(deleteFitnessWorkout(workoutId)).unwrap();
+      dispatch(fetchHealthData());
+      dispatch(addToast({ type: 'info', message: 'Workout deleted.' }));
+    } catch (err) {
+      console.error("Failed to delete workout:", err);
+      dispatch(addToast({ type: 'error', message: 'Failed to delete workout.' }));
     }
   };
 
@@ -119,7 +146,7 @@ export default function Fitness() {
     setAiPlanText('');
 
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("AI Workout generation timed out after 15s")), 15000)
+      setTimeout(() => reject(new Error("AI Workout generation timed out after 60s")), 60000)
     );
 
     try {
@@ -151,7 +178,7 @@ export default function Fitness() {
         <div className="flex gap-2 w-full sm:w-auto">
           <button 
             onClick={handleGenerateWorkout}
-            className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-gradient-to-r from-primary-550 to-accent-550 bg-primary-600 hover:bg-primary-750 text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-glow-primary hover:opacity-95 transition-all"
+            className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-gradient-to-r from-primary-500 to-accent-500 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-glow-primary hover:opacity-95 transition-all"
           >
             <Sparkles className="w-4 h-4" />
             AI Workout Planner
@@ -172,7 +199,7 @@ export default function Fitness() {
           { label: 'Cal Burned', value: totalCalories, icon: Flame, color: 'text-amber-500', bg: 'bg-amber-500/10' },
           { label: 'Minutes Active', value: totalMinutes, icon: Clock, color: 'text-primary-500', bg: 'bg-primary-500/10' },
           { label: 'Workouts Done', value: workouts.filter(w => w.completed).length, icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-500/10' },
-          { label: 'Streak', value: '5 days', icon: TrendingUp, color: 'text-rose-500', bg: 'bg-rose-500/10' },
+          { label: 'Active Days', value: `${activeDays} ${activeDays === 1 ? 'day' : 'days'}`, icon: TrendingUp, color: 'text-rose-500', bg: 'bg-rose-500/10' },
         ].map(stat => (
           <div key={stat.label} className="glass-card p-4">
             <div className={`w-10 h-10 rounded-2xl ${stat.bg} flex items-center justify-center mb-3`}>
@@ -255,10 +282,20 @@ export default function Fitness() {
                   {workout.completed ? (
                     <Badge variant="success" dot>Done</Badge>
                   ) : (
-                    <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary-600 text-white text-xs font-semibold">
-                      <Play className="w-3 h-3" /> Start
+                    <button
+                      onClick={() => handleCompleteWorkout(workout.id)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold transition-all"
+                    >
+                      <Play className="w-3 h-3" /> Complete
                     </button>
                   )}
+                  <button
+                    onClick={() => handleDeleteWorkout(workout.id)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
+                    title="Delete workout"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </motion.div>
             ))}
@@ -323,7 +360,7 @@ export default function Fitness() {
                 </h3>
                 <button 
                   onClick={() => setLogModalOpen(false)}
-                  className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 dark:text-slate-350 transition-all font-bold text-lg leading-none"
+                  className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 dark:text-slate-300 transition-all font-bold text-lg leading-none"
                 >
                   &times;
                 </button>
@@ -407,7 +444,7 @@ export default function Fitness() {
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-750 text-white font-semibold text-sm transition-all"
+                    className="px-5 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white font-semibold text-sm transition-all"
                   >
                     Save Workout
                   </button>
@@ -442,7 +479,7 @@ export default function Fitness() {
                 </div>
                 <button 
                   onClick={() => setShowAiPlan(false)}
-                  className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 dark:text-slate-350 transition-all font-bold text-lg leading-none"
+                  className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 dark:text-slate-300 transition-all font-bold text-lg leading-none"
                 >
                   &times;
                 </button>

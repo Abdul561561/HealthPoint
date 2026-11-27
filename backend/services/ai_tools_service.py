@@ -7,14 +7,13 @@ server-side authentication and authorization.
 Capabilities:
 - Reading health metrics
 - Listing user records
-- Summarizing appointments
 - Creating a saved diet plan
 - Creating a workout plan
 - Finding doctors
 - Finding pharmacies
 
 Consequential action confirmation:
-- Consequential actions (such as booking appointments, modifying medications, or submitting claims)
+- Consequential actions (such as modifying medications or submitting claims)
   require explicit client-side user confirmation before database write operations.
 """
 
@@ -59,25 +58,6 @@ async def tool_list_user_records(user_email: str, limit: int = 5) -> List[Dict[s
             "status": r.get("status")
         })
     return records
-
-async def tool_summarize_appointments(user_email: str) -> List[Dict[str, Any]]:
-    """Retrieves authenticated user's confirmed upcoming appointments."""
-    db = get_database()
-    if db is None:
-        return []
-    
-    appts = []
-    cursor = db.appointments.find({"user_email": user_email, "status": "confirmed"}).sort("date", 1).limit(5)
-    async for a in cursor:
-        appts.append({
-            "id": str(a["_id"]),
-            "doctor": a.get("doctor"),
-            "specialty": a.get("specialty"),
-            "date": a.get("date"),
-            "time": a.get("time"),
-            "hospital": a.get("hospital")
-        })
-    return appts
 
 async def tool_save_diet_plan(user_email: str, title: str, plan_text: str) -> Dict[str, Any]:
     """Saves a generated diet plan to user's saved plans collection."""

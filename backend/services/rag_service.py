@@ -147,7 +147,7 @@ class LocalVectorStore:
             })
             count += 1
             
-        logger.info(f"Indexed {count} chunks for user '{user_email}' under source '{title}'.")
+        logger.info("Indexed %d RAG chunks under source '%s'.", count, title)
         return count
 
     def retrieve_relevant_knowledge(

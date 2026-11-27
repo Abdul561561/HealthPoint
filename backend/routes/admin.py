@@ -49,13 +49,6 @@ class MedicineCreateUpdate(BaseModel):
     activeIngredient: str = ""
     genericAlternatives: List[str] = []
 
-class AppointmentAdminUpdate(BaseModel):
-    date: Optional[str] = None
-    time: Optional[str] = None
-    status: Optional[str] = None # confirmed, cancelled, pending
-    type: Optional[str] = None # Video Call, In-Person
-    doctor: Optional[str] = None
-
 class ReportAdminUpdate(BaseModel):
     status: str # normal, follow-up, abnormal, approved, rejected, pending_verification
 
@@ -106,7 +99,6 @@ async def get_admin_dashboard_stats():
     total_users = await db.users.count_documents({})
     total_doctors = await db.doctors.count_documents({})
     total_medicines = await db.medicines.count_documents({})
-    total_appointments = await db.appointments.count_documents({})
     
     # Calculate revenue
     total_revenue = 0.0
@@ -132,14 +124,7 @@ async def get_admin_dashboard_stats():
     
     # Recent activities listing
     recent_activities = []
-    appts_cursor = db.appointments.find({}).limit(3)
-    async for appt in appts_cursor:
-        recent_activities.append({
-            "type": "appointment",
-            "desc": f"Appointment scheduled for {appt.get('user_email')} with {appt.get('doctor')}",
-            "time": appt.get("date")
-        })
-    orders_cursor = db.orders.find({}).limit(2)
+    orders_cursor = db.orders.find({}).limit(5)
     async for ordr in orders_cursor:
         recent_activities.append({
             "type": "order",
@@ -152,7 +137,6 @@ async def get_admin_dashboard_stats():
             "totalUsers": total_users,
             "totalDoctors": total_doctors,
             "totalMedicines": total_medicines,
-            "totalAppointments": total_appointments,
             "totalRevenue": total_revenue,
             "aiQueries": ai_queries
         },
@@ -336,54 +320,6 @@ async def delete_admin_medicine(med_id: str):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Medicine not found")
     return {"success": True, "message": "Medicine deleted successfully"}
-
-# ────────────────────────────────────────────────────────────────────────────
-# Appointments Control
-# ────────────────────────────────────────────────────────────────────────────
-
-@router.get("/appointments", response_model=List[Any], dependencies=[Depends(check_admin_user)])
-async def list_admin_appointments():
-    db = get_database()
-    await ensure_collections_seeded(db)
-    cursor = db.appointments.find({})
-    appointments = []
-    async for appt in cursor:
-        appt["id"] = str(appt["_id"])
-        del appt["_id"]
-        appointments.append(appt)
-    return appointments
-
-@router.put("/appointments/{appt_id}", dependencies=[Depends(check_admin_user)])
-async def update_admin_appointment(appt_id: str, data: AppointmentAdminUpdate):
-    db = get_database()
-    try:
-        obj_id = ObjectId(appt_id)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid appointment ID format")
-        
-    update_fields = {k: v for k, v in data.model_dump().items() if v is not None}
-    if update_fields:
-        await db.appointments.update_one({"_id": obj_id}, {"$set": update_fields})
-        
-    updated = await db.appointments.find_one({"_id": obj_id})
-    if not updated:
-        raise HTTPException(status_code=404, detail="Appointment not found")
-    updated["id"] = str(updated["_id"])
-    del updated["_id"]
-    return updated
-
-@router.delete("/appointments/{appt_id}", dependencies=[Depends(check_admin_user)])
-async def delete_admin_appointment(appt_id: str):
-    db = get_database()
-    try:
-        obj_id = ObjectId(appt_id)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid appointment ID format")
-        
-    result = await db.appointments.delete_one({"_id": obj_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Appointment not found")
-    return {"success": True, "message": "Appointment deleted successfully"}
 
 # ────────────────────────────────────────────────────────────────────────────
 # AI Chat Monitoring & Logs

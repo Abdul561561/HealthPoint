@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Search, MapPin, Navigation, Phone, Clock, Star,
-  Pill, Bell, FileText, RefreshCw, X, Plus, Trash2,
+  Search, MapPin, Navigation, Phone, Clock,
+  Pill, FileText, RefreshCw, X, Trash2,
   AlertCircle, Check, Upload, Eye, ExternalLink,
-  ChevronRight, Sparkles, Activity, Heart, Map, List,
-  Filter, SlidersHorizontal, Package, Navigation2, AlertTriangle
+  Sparkles, Activity, Heart, Map, List,
+  Filter, SlidersHorizontal, Navigation2, AlertTriangle, LocateFixed
 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
@@ -17,8 +17,7 @@ import {
   deletePrescriptionFile
 } from '../redux/slices/pharmacySlice';
 import { addToast } from '../redux/slices/uiSlice';
-import { useTheme } from '../hooks/useTheme';
-import api, { fetchProtectedFileBlobUrl } from '../services/api';
+import { fetchProtectedFileBlobUrl } from '../services/api';
 import { searchNearbyPharmacies, searchAddress, getRoute } from '../services/openMapsApi';
 
 const TABS = [
@@ -53,10 +52,10 @@ function PharmacyCardSkeleton() {
 // Pharmacy card component
 function PharmacyCard({ pharmacy, isSelected, onSelect, onDirections, routeActive }) {
   const openStatus = pharmacy.open_now === true
-    ? { label: 'Open Now', cls: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' }
-    : pharmacy.open_now === false
-    ? { label: 'Closed', cls: 'bg-rose-500/15 text-rose-500' }
-    : { label: 'Hours N/A', cls: 'bg-slate-200 dark:bg-white/10 text-slate-500' };
+    ? { label: 'Open 24/7', cls: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' }
+    : pharmacy.opening_hours?.length > 0
+    ? { label: pharmacy.opening_hours[0], cls: 'bg-sky-500/15 text-sky-700 dark:text-sky-300' }
+    : { label: 'Hours N/A in OSM', cls: 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300' };
 
   return (
     <motion.div
@@ -75,23 +74,30 @@ function PharmacyCard({ pharmacy, isSelected, onSelect, onDirections, routeActiv
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <h3 className="font-bold text-slate-900 dark:text-white text-sm leading-tight line-clamp-1">{pharmacy.name}</h3>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0 ${openStatus.cls}`}>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0 max-w-[130px] truncate ${openStatus.cls}`}>
               {openStatus.label}
             </span>
           </div>
-          <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-1 flex items-center gap-1">
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1 flex items-center gap-1">
             <MapPin className="w-3 h-3 flex-shrink-0" />
             {pharmacy.address}
           </p>
-          <div className="flex items-center gap-3 mt-1.5">
-            <div className="flex items-center gap-1">
-              <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{pharmacy.rating?.toFixed(1) || 'N/A'}</span>
-            </div>
-            <div className="flex items-center gap-1 text-[11px] text-slate-400">
+          <div className="flex flex-wrap items-center gap-3 mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+            <div className="flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400">
               <Navigation className="w-3 h-3" />
               {pharmacy.distance_km} km
             </div>
+            {pharmacy.phone && (
+              <a
+                href={`tel:${pharmacy.phone}`}
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-center gap-1 hover:text-emerald-600 dark:hover:text-emerald-300"
+              >
+                <Phone className="w-3 h-3" />
+                {pharmacy.phone}
+              </a>
+            )}
+            <span className="text-[10px] text-slate-400 ml-auto">OSM</span>
           </div>
         </div>
       </div>
@@ -102,21 +108,21 @@ function PharmacyCard({ pharmacy, isSelected, onSelect, onDirections, routeActiv
           className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
             routeActive
               ? 'bg-emerald-500 text-white hover:bg-emerald-600'
-              : 'border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5'
+              : 'border border-slate-200 dark:border-white/15 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5'
           }`}
         >
           <Navigation2 className="w-3.5 h-3.5" />
-          {routeActive ? 'Active Route' : 'Show Route'}
+          {routeActive ? 'Hide Route' : 'Route'}
         </button>
         <a
-          href={pharmacy.maps_url}
+          href={pharmacy.directions_url || pharmacy.maps_url}
           target="_blank"
           rel="noopener noreferrer"
           onClick={e => e.stopPropagation()}
-          className="flex-1 py-2 rounded-xl text-xs font-semibold border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 flex items-center justify-center gap-1.5 transition-all"
+          className="flex-1 py-2 rounded-xl text-xs font-semibold border border-slate-200 dark:border-white/15 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 flex items-center justify-center gap-1.5 transition-all"
         >
           <ExternalLink className="w-3.5 h-3.5" />
-          View
+          Directions
         </a>
       </div>
     </motion.div>
@@ -125,14 +131,19 @@ function PharmacyCard({ pharmacy, isSelected, onSelect, onDirections, routeActiv
 
 export default function Pharmacy() {
   const dispatch = useDispatch();
-  const { uploadedPrescription, prescriptionHistory = [], loading, prescriptionLoading, error } = useSelector(s => s.pharmacy);
+  const { uploadedPrescription, prescriptionHistory = [], prescriptionLoading } = useSelector(s => s.pharmacy);
 
   const [activeTab, setActiveTab] = useState('pharmacies');
 
   // Pharmacy map state
   const [coords, setCoords] = useState(null);
+  const [locationLabel, setLocationLabel] = useState('');
+  const [locationStatus, setLocationStatus] = useState('detecting'); // detecting | granted | denied | manual
   const [pharmacies, setPharmacies] = useState([]);
   const [pharmacyLoading, setPharmacyLoading] = useState(false);
+  const [pharmacyError, setPharmacyError] = useState('');
+  const [routeLoading, setRouteLoading] = useState(false);
+  const [viewMode, setViewMode] = useState('split'); // split | list | map
   const [openOnly, setOpenOnly] = useState(false);
   const [selectedPharmacy, setSelectedPharmacy] = useState(null);
   const [pharmacyRadius, setPharmacyRadius] = useState(3000);
@@ -151,8 +162,6 @@ export default function Pharmacy() {
   const [prescriptionFile, setPrescriptionFile] = useState(null);
   const [prescriptionPreview, setPrescriptionPreview] = useState(null);
 
-  const { isDark } = useTheme();
-
   // Map references
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -162,18 +171,31 @@ export default function Pharmacy() {
   const routePolylineRef = useRef(null);
   const suggestionTimerRef = useRef(null);
 
-  // Get user location
-  useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        pos => setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => setCoords({ lat: 12.9716, lng: 77.5946 }),
-        { timeout: 8000 }
-      );
-    } else {
-      setCoords({ lat: 12.9716, lng: 77.5946 });
+  // Request browser location explicitly (never silently fall back to hardcoded city)
+  const requestBrowserLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setLocationStatus('denied');
+      return;
     }
+    setLocationStatus('detecting');
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setLocationLabel('Current GPS Location');
+        setLocationStatus('granted');
+      },
+      () => {
+        setLocationStatus('denied');
+      },
+      { timeout: 8000 }
+    );
   }, []);
+
+  useEffect(() => {
+    Promise.resolve().then(() => {
+      requestBrowserLocation();
+    });
+  }, [requestBrowserLocation]);
 
   // Load initial data
   useEffect(() => {
@@ -221,43 +243,44 @@ export default function Pharmacy() {
     }
   };
 
-  // Fetch pharmacies using Overpass API
+  // Fetch pharmacies using backend Overpass proxy
   const fetchPharmacies = useCallback(async () => {
     if (!coords) return;
     setPharmacyLoading(true);
+    setPharmacyError('');
+    setSelectedPharmacy(null);
     try {
-      const pharmacies = await searchNearbyPharmacies(
+      const list = await searchNearbyPharmacies(
         coords.lat,
         coords.lng,
         pharmacyRadius,
         openOnly
       );
-      setPharmacies(pharmacies);
+      setPharmacies(list);
     } catch (e) {
       console.error('Failed to fetch pharmacies:', e);
-      dispatch(addToast({ title: 'Pharmacy Search Warning', message: 'Using local offline directory.', type: 'warning' }));
-      setPharmacies([
-        { place_id: "fb_local_1", name: "Apollo Pharmacy 24/7", address: "74, Double Road, Indiranagar, Bengaluru", rating: 4.7, reviews: 320, open_now: true, is_emergency: true, distance_km: 0.31, latitude: coords?.lat || 12.9716, longitude: coords?.lng || 77.5946, phone: "+91 80 2525 1111", website: "https://apollopharmacy.in" },
-        { place_id: "fb_local_2", name: "MedPlus Indiranagar", address: "18, CMH Road, Indiranagar, Bengaluru", rating: 4.5, reviews: 145, open_now: true, is_emergency: false, distance_km: 0.54, latitude: (coords?.lat || 12.9716) + 0.002, longitude: (coords?.lng || 77.5946) + 0.002, phone: "+91 80 2525 2222", website: "https://medplusmart.com" },
-        { place_id: "fb_local_3", name: "Wellness Forever Pharmacy 24/7", address: "33, 100 Feet Rd, Indiranagar, Bengaluru", rating: 4.9, reviews: 420, open_now: true, is_emergency: true, distance_km: 0.78, latitude: (coords?.lat || 12.9716) - 0.003, longitude: (coords?.lng || 77.5946) - 0.003, phone: "+91 80 2525 5555", website: "https://wellnessforever.com" }
-      ]);
+      setPharmacies([]);
+      setPharmacyError(e.message || 'Unable to load nearby pharmacies from OpenStreetMap right now.');
     } finally {
       setPharmacyLoading(false);
     }
   }, [coords, openOnly, pharmacyRadius]);
 
   useEffect(() => {
-    if (activeTab === 'pharmacies' && coords) fetchPharmacies();
+    if (activeTab === 'pharmacies' && coords) {
+      Promise.resolve().then(() => {
+        fetchPharmacies();
+      });
+    }
   }, [activeTab, fetchPharmacies, coords]);
 
-  // Init Leaflet Map
+  // Init Leaflet Map with official OpenStreetMap tiles
   useEffect(() => {
-    if (activeTab !== 'pharmacies' || !coords || !mapRef.current) return;
+    if (activeTab !== 'pharmacies' || viewMode === 'list' || !coords || !mapRef.current || !window.L) return;
 
     if (!mapInstanceRef.current) {
       mapInstanceRef.current = window.L.map(mapRef.current, {
         zoomControl: false,
-        attributionControl: false
       }).setView([coords.lat, coords.lng], 14);
 
       window.L.control.zoom({ position: 'bottomright' }).addTo(mapInstanceRef.current);
@@ -265,19 +288,14 @@ export default function Pharmacy() {
       mapInstanceRef.current.setView([coords.lat, coords.lng], 14);
     }
 
-    // Set tile layer dynamically matching active theme
     if (tileLayerRef.current) {
       tileLayerRef.current.remove();
     }
-    const tileUrl = isDark 
-      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-      : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-    tileLayerRef.current = window.L.tileLayer(tileUrl, {
+    tileLayerRef.current = window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      attribution: isDark ? '&copy; OpenStreetMap &copy; CARTO' : '&copy; OpenStreetMap'
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(mapInstanceRef.current);
 
-    // Add User marker
     if (userMarkerRef.current) userMarkerRef.current.remove();
 
     const pulseIcon = window.L.divIcon({
@@ -294,9 +312,10 @@ export default function Pharmacy() {
 
     userMarkerRef.current = window.L.marker([coords.lat, coords.lng], { icon: pulseIcon, zIndexOffset: 1000 })
       .addTo(mapInstanceRef.current)
-      .bindPopup('<strong class="text-xs">Your Location</strong>');
+      .bindPopup(`<strong class="text-xs">${locationLabel || 'Your Location'}</strong>`);
 
-  }, [activeTab, coords, isDark]);
+    setTimeout(() => mapInstanceRef.current?.invalidateSize(), 150);
+  }, [activeTab, viewMode, coords, locationLabel]);
 
   // Update pharmacy markers on map
   useEffect(() => {
@@ -371,6 +390,8 @@ export default function Pharmacy() {
 
   const handleSelectAddress = (suggestion) => {
     setCoords({ lat: suggestion.lat, lng: suggestion.lng });
+    setLocationLabel(suggestion.display_name);
+    setLocationStatus('manual');
     setAddressQuery(suggestion.display_name);
     setShowSuggestions(false);
 
@@ -382,9 +403,25 @@ export default function Pharmacy() {
     setRouteInfo(null);
   };
 
+  const handleManualAddressSubmit = async (e) => {
+    e.preventDefault();
+    if (!addressQuery.trim()) return;
+    try {
+      const results = await searchAddress(addressQuery.trim());
+      if (results?.length) {
+        handleSelectAddress(results[0]);
+      } else {
+        dispatch(addToast({ title: 'Location Not Found', message: 'Enter a valid city, locality, or PIN code.', type: 'error' }));
+      }
+    } catch {
+      dispatch(addToast({ title: 'Geocoding Error', message: 'Failed to look up location via Nominatim.', type: 'error' }));
+    }
+  };
+
   // Draw OSRM route line
   const handleDirections = async (pharmacy) => {
-    if (!coords || !mapInstanceRef.current) return;
+    if (!coords) return;
+    if (viewMode === 'list') setViewMode('split');
 
     if (activeRoute === pharmacy.place_id) {
       if (routePolylineRef.current) {
@@ -393,43 +430,44 @@ export default function Pharmacy() {
       }
       setActiveRoute(null);
       setRouteInfo(null);
-      mapInstanceRef.current.setView([coords.lat, coords.lng], 14);
+      mapInstanceRef.current?.setView([coords.lat, coords.lng], 14);
       return;
     }
 
     try {
       setSelectedPharmacy(pharmacy);
-      setPharmacyLoading(true);
+      setRouteLoading(true);
 
       const routeData = await getRoute(coords, { lat: pharmacy.latitude, lng: pharmacy.longitude });
 
-      if (routePolylineRef.current) {
-        routePolylineRef.current.remove();
-      }
+      if (mapInstanceRef.current) {
+        if (routePolylineRef.current) {
+          routePolylineRef.current.remove();
+        }
+        routePolylineRef.current = window.L.polyline(routeData.coordinates, {
+          color: '#10b981',
+          weight: 5,
+          opacity: 0.85,
+          dashArray: '10, 8'
+        }).addTo(mapInstanceRef.current);
 
-      routePolylineRef.current = window.L.polyline(routeData.coordinates, {
-        color: '#10b981',
-        weight: 5,
-        opacity: 0.85,
-        dashArray: '10, 8'
-      }).addTo(mapInstanceRef.current);
+        const bounds = window.L.latLngBounds([
+          [coords.lat, coords.lng],
+          [pharmacy.latitude, pharmacy.longitude]
+        ]);
+        mapInstanceRef.current.fitBounds(bounds, { padding: [60, 60] });
+      }
 
       setActiveRoute(pharmacy.place_id);
       setRouteInfo({
         distance: routeData.distance_km,
         duration: routeData.duration_min
       });
-
-      const bounds = window.L.latLngBounds([
-        [coords.lat, coords.lng],
-        [pharmacy.latitude, pharmacy.longitude]
-      ]);
-      mapInstanceRef.current.fitBounds(bounds, { padding: [60, 60] });
     } catch (err) {
       console.error(err);
       dispatch(addToast({ title: 'Route Error', message: 'Unable to calculate directions.', type: 'error' }));
     } finally {
-      setPharmacyLoading(false);
+      setRouteLoading(false);
     }
   };
 
@@ -511,152 +549,229 @@ export default function Pharmacy() {
 
       {/* ── NEARBY PHARMACIES TAB ─────────────────────────────────────── */}
       {activeTab === 'pharmacies' && (
-        <div className="flex flex-col gap-4 overflow-hidden flex-1 min-h-0">
+        <div className="flex flex-col gap-3 overflow-hidden flex-1 min-h-0">
           {/* Pharmacy search + geocoding location search */}
           <div className="flex flex-wrap gap-2 flex-shrink-0 relative z-[1000]">
-            <div className="relative flex-1 min-w-[200px]">
+            <div className="relative flex-1 min-w-[180px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
                 type="text"
                 value={pharmacySearch}
                 onChange={e => setPharmacySearch(e.target.value)}
-                placeholder="Search pharmacy name..."
+                placeholder="Filter pharmacy name..."
                 className="input-field pl-9 py-2 text-sm w-full"
               />
             </div>
-            
-            <div className="relative flex-1 min-w-[220px]">
-              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-500" />
-              <input
-                type="text"
-                value={addressQuery}
-                onChange={handleAddressInputChange}
-                placeholder="Type location to change search area..."
-                className="input-field pl-9 py-2 text-sm w-full"
-                onFocus={() => setShowSuggestions(addressSuggestions.length > 0)}
-              />
-              {addressQuery && (
-                <button onClick={() => { setAddressQuery(''); setAddressSuggestions([]); setShowSuggestions(false); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
 
-              {/* Suggestions list */}
-              <AnimatePresence>
-                {showSuggestions && (
-                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}
-                    className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto"
-                  >
-                    {addressSuggestions.map((s, idx) => (
-                      <button key={idx} onClick={() => handleSelectAddress(s)} className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 border-b border-slate-100 dark:border-white/5 flex items-center gap-1.5">
-                        <MapPin className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                        <span className="truncate">{s.display_name}</span>
-                      </button>
-                    ))}
-                  </motion.div>
+            <form onSubmit={handleManualAddressSubmit} className="relative flex-1 min-w-[230px] flex gap-1.5">
+              <div className="relative flex-1">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-500" />
+                <input
+                  type="text"
+                  value={addressQuery}
+                  onChange={handleAddressInputChange}
+                  placeholder="Enter city, area, or PIN code..."
+                  className="input-field pl-9 py-2 text-sm w-full"
+                  onFocus={() => setShowSuggestions(addressSuggestions.length > 0)}
+                />
+                {addressQuery && (
+                  <button type="button" onClick={() => { setAddressQuery(''); setAddressSuggestions([]); setShowSuggestions(false); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 )}
-              </AnimatePresence>
-            </div>
+
+                <AnimatePresence>
+                  {showSuggestions && (
+                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}
+                      className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto z-50"
+                    >
+                      {addressSuggestions.map((s, idx) => (
+                        <button type="button" key={idx} onClick={() => handleSelectAddress(s)} className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 border-b border-slate-100 dark:border-white/5 flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                          <span className="truncate">{s.display_name}</span>
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+              <button type="submit" className="btn-secondary px-3 py-2 text-xs font-semibold">Go</button>
+            </form>
+
+            <button
+              type="button"
+              onClick={requestBrowserLocation}
+              className="btn-secondary px-3 py-2 text-xs font-semibold flex items-center gap-1.5"
+              title="Use browser GPS location"
+            >
+              <LocateFixed className="w-3.5 h-3.5 text-emerald-500" /> GPS
+            </button>
 
             <select
               value={pharmacyRadius}
               onChange={e => setPharmacyRadius(Number(e.target.value))}
-              className="input-field py-2 text-sm"
+              className="input-field py-2 text-sm w-auto"
             >
               <option value={1000}>1 km</option>
               <option value={3000}>3 km</option>
               <option value={5000}>5 km</option>
               <option value={10000}>10 km</option>
             </select>
+
             <button
-              onClick={() => { setOpenOnly(!openOnly); }}
-              className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all flex items-center gap-2 ${
-                openOnly ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300'
+              type="button"
+              onClick={() => setOpenOnly(!openOnly)}
+              className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all flex items-center gap-1.5 ${
+                openOnly ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-200 dark:border-white/15 text-slate-600 dark:text-slate-300'
               }`}
             >
               <Clock className="w-3.5 h-3.5" />
-              Open Now
+              24/7 Only
             </button>
-            <button onClick={fetchPharmacies} disabled={pharmacyLoading} className="btn-primary px-4 py-2 rounded-xl text-sm flex items-center gap-2 font-semibold">
-              <RefreshCw className={`w-4 h-4 ${pharmacyLoading ? 'animate-spin' : ''}`} />
+
+            <div className="flex rounded-xl border border-slate-200 dark:border-white/15 overflow-hidden">
+              {[
+                { id: 'split', label: 'Split', icon: Filter },
+                { id: 'list', label: 'List', icon: List },
+                { id: 'map', label: 'Map', icon: Map },
+              ].map(m => {
+                const VIcon = m.icon;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setViewMode(m.id)}
+                    className={`px-2.5 py-2 text-xs font-semibold flex items-center gap-1 ${
+                      viewMode === m.id
+                        ? 'bg-emerald-500 text-white'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5'
+                    }`}
+                  >
+                    <VIcon className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">{m.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <button onClick={fetchPharmacies} disabled={pharmacyLoading || !coords} className="btn-primary px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 font-semibold disabled:opacity-50">
+              <RefreshCw className={`w-3.5 h-3.5 ${pharmacyLoading ? 'animate-spin' : ''}`} />
               Refresh
             </button>
           </div>
 
-          {/* Split view: cards + map */}
-          <div className="flex-1 flex gap-4 overflow-hidden min-h-0">
-            {/* LEFT: Pharmacy cards */}
-            <div className="w-[42%] flex flex-col overflow-hidden">
-              <p className="text-xs text-slate-500 mb-3 flex-shrink-0">
-                {pharmacyLoading ? 'Searching OpenStreetMap...' : `${filteredPharmacies.length} pharmacies found`}
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            OpenStreetMap pharmacy listings ({locationLabel || 'location required'}). Medicine availability & live inventory are not verified via OpenStreetMap — confirm stock directly with the pharmacy.
+          </p>
+
+          {!coords && locationStatus === 'denied' && (
+            <div className="glass-card p-6 text-center space-y-2 border border-amber-300 dark:border-amber-500/30">
+              <MapPin className="w-8 h-8 text-amber-500 mx-auto" />
+              <h3 className="font-bold text-sm text-slate-900 dark:text-white">Location Access Required to Find Nearby Pharmacies</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                Enable browser GPS permissions or enter your city, locality, or PIN code above. HealthPoint never assumes a default city.
               </p>
-              <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-thin">
-                {pharmacyLoading ? (
-                  Array.from({ length: 5 }).map((_, i) => <PharmacyCardSkeleton key={i} />)
-                ) : filteredPharmacies.length === 0 ? (
-                  <div className="glass-card p-10 text-center">
-                    <MapPin className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                    <h3 className="font-bold text-slate-900 dark:text-white text-base">No pharmacies found</h3>
-                    <p className="text-xs text-slate-500 mt-1">Try increasing the search radius or setting another location.</p>
-                  </div>
-                ) : (
-                  <AnimatePresence>
-                    {filteredPharmacies.map(p => (
-                      <PharmacyCard
-                        key={p.place_id}
-                        pharmacy={p}
-                        isSelected={selectedPharmacy?.place_id === p.place_id}
-                        onSelect={(ph) => {
-                          setSelectedPharmacy(ph);
-                          if (mapInstanceRef.current && ph.latitude) {
-                            mapInstanceRef.current.panTo([ph.latitude, ph.longitude]);
-                          }
-                        }}
-                        onDirections={handleDirections}
-                        routeActive={activeRoute === p.place_id}
-                      />
-                    ))}
-                  </AnimatePresence>
-                )}
-              </div>
             </div>
+          )}
 
-            {/* RIGHT: Leaflet Map */}
-            <div className="flex-1 rounded-2xl overflow-hidden border border-slate-200 dark:border-white/10 relative bg-slate-950/20">
-              <div ref={mapRef} className="w-full h-full z-10" />
-
-              {/* OSRM Route Info overlay */}
-              <AnimatePresence>
-                {routeInfo && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 15 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 15 }}
-                    className="absolute left-4 top-4 z-[999] bg-slate-900/90 backdrop-blur-md border border-emerald-500/30 p-4 rounded-2xl flex items-center gap-4 text-white shadow-xl"
-                  >
-                    <div className="w-10 h-10 bg-emerald-500/10 border border-emerald-500/25 rounded-xl flex items-center justify-center">
-                      <Navigation className="w-5 h-5 text-emerald-400 rotate-45" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Route Directions</h4>
-                      <p className="text-sm font-black mt-0.5">
-                        {routeInfo.distance} km <span className="text-slate-400 font-semibold mx-1">·</span> {routeInfo.duration} mins
-                      </p>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {pharmacyLoading && (
-                <div className="absolute inset-0 bg-white/70 dark:bg-slate-900/75 backdrop-blur-sm flex items-center justify-center pointer-events-none z-[999]">
-                  <div className="text-center">
-                    <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto" />
-                    <p className="text-sm font-semibold text-slate-600 dark:text-slate-300 mt-3">Updating OpenStreetMap...</p>
+          {coords && (
+            <div className="flex-1 flex flex-col lg:flex-row gap-4 overflow-hidden min-h-0">
+              {/* LEFT: Pharmacy cards */}
+              {viewMode !== 'map' && (
+                <div className={`${viewMode === 'list' ? 'w-full' : 'w-full lg:w-[44%]'} flex flex-col overflow-hidden min-h-0`}>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-2 flex-shrink-0">
+                    {pharmacyLoading ? 'Querying OpenStreetMap Overpass...' : `${filteredPharmacies.length} pharmacies found`}
+                  </p>
+                  <div className="flex-1 overflow-y-auto space-y-3 pr-1 scrollbar-thin">
+                    {pharmacyLoading ? (
+                      Array.from({ length: 4 }).map((_, i) => <PharmacyCardSkeleton key={i} />)
+                    ) : pharmacyError ? (
+                      <div className="glass-card p-6 text-center space-y-3 border border-rose-200 dark:border-rose-500/30">
+                        <AlertCircle className="w-8 h-8 text-rose-500 mx-auto" />
+                        <p className="text-xs text-slate-600 dark:text-slate-300">{pharmacyError}</p>
+                        <div className="flex justify-center gap-2">
+                          <button type="button" onClick={fetchPharmacies} className="btn-primary py-1.5 px-3 text-xs">
+                            <RefreshCw className="w-3.5 h-3.5" /> Retry Search
+                          </button>
+                          <a
+                            href={`https://www.openstreetmap.org/search?query=pharmacy#map=14/${coords.lat}/${coords.lng}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn-secondary py-1.5 px-3 text-xs"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" /> OpenStreetMap
+                          </a>
+                        </div>
+                      </div>
+                    ) : filteredPharmacies.length === 0 ? (
+                      <div className="glass-card p-8 text-center">
+                        <MapPin className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                        <h3 className="font-bold text-slate-900 dark:text-white text-sm">No pharmacies found</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Try increasing the radius, turning off 24/7 filter, or searching another locality/PIN.</p>
+                      </div>
+                    ) : (
+                      <AnimatePresence>
+                        {filteredPharmacies.map(p => (
+                          <PharmacyCard
+                            key={p.place_id}
+                            pharmacy={p}
+                            isSelected={selectedPharmacy?.place_id === p.place_id}
+                            onSelect={(ph) => {
+                              setSelectedPharmacy(ph);
+                              if (mapInstanceRef.current && ph.latitude) {
+                                mapInstanceRef.current.panTo([ph.latitude, ph.longitude]);
+                              }
+                            }}
+                            onDirections={handleDirections}
+                            routeActive={activeRoute === p.place_id}
+                          />
+                        ))}
+                      </AnimatePresence>
+                    )}
                   </div>
                 </div>
               )}
+
+              {/* RIGHT: Leaflet Map */}
+              {viewMode !== 'list' && (
+                <div className="flex-1 min-h-[260px] rounded-2xl overflow-hidden border border-slate-200 dark:border-white/10 relative bg-slate-100 dark:bg-dark-200">
+                  <div ref={mapRef} className="w-full h-full z-10" />
+
+                  <AnimatePresence>
+                    {routeInfo && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 15 }}
+                        className="absolute left-4 top-4 z-[999] bg-slate-900/90 backdrop-blur-md border border-emerald-500/30 p-3 rounded-2xl flex items-center gap-3 text-white shadow-xl"
+                      >
+                        <div className="w-9 h-9 bg-emerald-500/10 border border-emerald-500/25 rounded-xl flex items-center justify-center">
+                          <Navigation className="w-4 h-4 text-emerald-400 rotate-45" />
+                        </div>
+                        <div>
+                          <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Route Estimate</h4>
+                          <p className="text-xs font-bold mt-0.5">
+                            {routeInfo.distance} km · {routeInfo.duration} mins
+                          </p>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {(pharmacyLoading || routeLoading) && (
+                    <div className="absolute inset-0 bg-white/70 dark:bg-slate-900/75 backdrop-blur-sm flex items-center justify-center pointer-events-none z-[999]">
+                      <div className="text-center">
+                        <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                        <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 mt-2">
+                          {routeLoading ? 'Calculating route...' : 'Searching OpenStreetMap...'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -724,8 +839,8 @@ export default function Pharmacy() {
                   <FileText className="w-5 h-5 text-violet-500" />
                   Active Prescription
                 </h3>
-                <div className="p-2 rounded-xl border border-slate-150 dark:border-white/5 space-y-3">
-                  <div className="aspect-video rounded-lg bg-slate-150 dark:bg-white/5 overflow-hidden flex items-center justify-center">
+                <div className="p-2 rounded-xl border border-slate-200 dark:border-white/5 space-y-3">
+                  <div className="aspect-video rounded-lg bg-slate-200 dark:bg-white/5 overflow-hidden flex items-center justify-center">
                     {protectedRxUrl ? (
                       <img src={protectedRxUrl} alt="Uploaded Rx" className="w-full h-full object-cover" />
                     ) : (
@@ -776,7 +891,7 @@ export default function Pharmacy() {
                   )}
 
                   {/* Patient & Doctor Meta Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3.5 rounded-xl border border-slate-150 dark:border-white/5 bg-slate-50/50 dark:bg-white/5">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3.5 rounded-xl border border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-white/5">
                     <div className="text-xs">
                       <span className="text-slate-400 block text-[10px] font-bold uppercase tracking-wider">Patient Name</span>
                       <strong className="text-slate-800 dark:text-white font-black">{uploadedPrescription.analysis?.patient_name || 'Unknown'}</strong>
@@ -848,7 +963,6 @@ export default function Pharmacy() {
                       const isAfternoon = when.includes('afternoon') || when.includes('lunch') || when.includes('three');
                       const isNight = when.includes('night') || when.includes('dinner') || when.includes('evening') || when.includes('bedtime') || when.includes('twice') || when.includes('three');
                       const isBeforeFood = when.includes('before') || when.includes('empty stomach');
-                      const isAfterFood = !isBeforeFood;
 
                       // Parse duration
                       const durationMatch = when.match(/for\s+(\d+\s+days?|\d+\s+weeks?)/i);
@@ -921,7 +1035,7 @@ export default function Pharmacy() {
                           </div>
 
                           {/* Timings Visual Badges */}
-                          <div className="grid grid-cols-3 gap-2 py-1 bg-white/40 dark:bg-dark-300/40 p-2 rounded-xl border border-slate-150 dark:border-white/5">
+                          <div className="grid grid-cols-3 gap-2 py-1 bg-white/40 dark:bg-dark-300/40 p-2 rounded-xl border border-slate-200 dark:border-white/5">
                             {[
                               { label: 'Morning', active: isMorning, time: '8:00 AM' },
                               { label: 'Afternoon', active: isAfternoon, time: '2:00 PM' },
@@ -940,7 +1054,7 @@ export default function Pharmacy() {
 
                           <div className="space-y-1.5 pl-1">
                             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Clinical Action</span>
-                            <p className="text-xs text-slate-700 dark:text-slate-350 font-semibold leading-relaxed">
+                            <p className="text-xs text-slate-700 dark:text-slate-300 font-semibold leading-relaxed">
                               {med.how_it_helps}
                             </p>
                           </div>

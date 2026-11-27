@@ -27,14 +27,14 @@ const renderMarkdown = (text) => {
     if (currentLine.trim().startsWith('*') || currentLine.trim().startsWith('-')) {
       const cleanText = currentLine.replace(/^[\*\-]\s*/, '');
       return (
-        <li key={index} className="list-disc ml-5 my-1 text-slate-700 dark:text-slate-350">
+        <li key={index} className="list-disc ml-5 my-1 text-slate-700 dark:text-slate-300">
           {parseInlineMarkdown(cleanText)}
         </li>
       );
     }
     if (currentLine.startsWith('###')) {
       return (
-        <h5 key={index} className="text-xs font-extrabold text-primary-550 dark:text-primary-400 mt-3 mb-1.5 uppercase tracking-wider">
+        <h5 key={index} className="text-xs font-extrabold text-primary-500 dark:text-primary-400 mt-3 mb-1.5 uppercase tracking-wider">
           {parseInlineMarkdown(currentLine.substring(3).trim())}
         </h5>
       );
@@ -74,7 +74,7 @@ const parseInlineMarkdown = (text) => {
       parts.push(text.substring(lastIndex, match.index));
     }
     parts.push(
-      <strong key={match.index} className="font-extrabold text-primary-600 dark:text-primary-450">
+      <strong key={match.index} className="font-extrabold text-primary-600 dark:text-primary-400">
         {match[1]}
       </strong>
     );
@@ -312,7 +312,7 @@ export default function HealthRecords() {
                   </button>
                   <button 
                     onClick={() => handleDeleteRecord(record.id || record._id)}
-                    className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/20 text-slate-400 hover:text-rose-600 dark:hover:text-rose-450 transition-all"
+                    className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/20 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-all"
                     title="Delete Record"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -438,7 +438,7 @@ export default function HealthRecords() {
                   setViewRecord(null);
                   handleAnalyzeRecord(viewRecord);
                 }}
-                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-primary-550 to-accent-550 bg-primary-600 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-glow-primary hover:opacity-95 transition-all"
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-primary-500 to-accent-500 bg-primary-600 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-glow-primary hover:opacity-95 transition-all"
               >
                 <Sparkles className="w-4.5 h-4.5 text-white" />
                 Doctor's AI Summary

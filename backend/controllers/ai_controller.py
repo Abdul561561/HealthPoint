@@ -14,8 +14,16 @@ from bson import ObjectId
 
 from database.mongodb import get_database
 from services.llm_service import get_llm_service, LLMServiceException
-from services.intent_service import detect_intent, IntentType
-from services.health_context_service import build_minimized_health_context
+from services.intent_service import detect_intent, IntentType, PERSONAL_CONTEXT_INTENTS
+from services.health_context_service import (
+    build_minimized_health_context,
+    build_structured_health_context,
+    get_user_health_context_snapshot,
+)
+from services.action_router_service import (
+    looks_like_pure_location_reply,
+    route_healthcare_actions,
+)
 from services.rag_service import get_rag_service
 from services.rate_limit_service import rate_limiter
 from services.document_service import (
@@ -96,12 +104,20 @@ def _format_unavailable_message(llm_err: Exception, intent: str) -> str:
     )
 
 
-async def chat_ai_controller(user_email: str, message: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+async def chat_ai_controller(
+    user_email: str,
+    message: str,
+    session_id: Optional[str] = None,
+    lat: Optional[float] = None,
+    lng: Optional[float] = None,
+    location_query: Optional[str] = None,
+    location_denied: bool = False,
+) -> Dict[str, Any]:
     """
     Main conversational endpoint:
     - Enforces rate limiting and chat-session ownership.
-    - Classifies intent and preserves follow-up context.
-    - Retrieves minimal de-identified health data ONLY when relevant.
+    - Classifies intent and preserves follow-up & location context.
+    - Retrieves minimal de-identified health data & executes real Google Places / action routing when relevant.
     - Executes completion via Google Gemini (`google-genai`) with transparent fallback messages.
     """
     rate_limiter.check("ai_chat", user_email, max_requests=30, window_seconds=300)
@@ -151,24 +167,54 @@ async def chat_ai_controller(user_email: str, message: str, session_id: Optional
             "messages": [],
         }
 
-    # Intent Detection with Follow-up context preservation
+    # Intent Detection with Follow-up and Location reply context preservation
     intent_data = detect_intent(message)
     intent = intent_data["intent"]
 
-    if intent == IntentType.FOLLOW_UP and session.get("messages"):
-        prior_user_msgs = [m.get("content", "") for m in session["messages"] if m.get("role") == "user"]
-        if prior_user_msgs:
-            prior_intent = detect_intent(prior_user_msgs[-1])
-            if prior_intent.get("is_healthcare"):
-                intent_data["is_healthcare"] = True
-                intent_data["requires_health_context"] = prior_intent.get("requires_health_context", False)
-                intent_data["requires_disclaimer"] = prior_intent.get("requires_disclaimer", False)
-                intent = prior_intent["intent"]
+    prior_user_msgs = [m.get("content", "") for m in session.get("messages", []) if m.get("role") == "user"]
+    if intent == IntentType.FOLLOW_UP and prior_user_msgs:
+        prior_intent = detect_intent(prior_user_msgs[-1])
+        if prior_intent.get("is_healthcare"):
+            intent_data["is_healthcare"] = True
+            intent_data["requires_health_context"] = prior_intent.get("requires_health_context", False)
+            intent_data["requires_disclaimer"] = prior_intent.get("requires_disclaimer", False)
+            intent = prior_intent["intent"]
+    elif (
+        intent == IntentType.UNKNOWN
+        and looks_like_pure_location_reply(message)
+        and (session.get("last_facility_mode") or (prior_user_msgs and detect_intent(prior_user_msgs[-1])["intent"] in (IntentType.DOCTOR_DISCOVERY, IntentType.HOSPITAL_DISCOVERY, IntentType.SYMPTOM_TRIAGE)))
+    ):
+        intent = IntentType.HOSPITAL_DISCOVERY if session.get("last_facility_mode") == "hospital" else IntentType.DOCTOR_DISCOVERY
+        intent_data["is_healthcare"] = True
+        intent_data["requires_disclaimer"] = False
 
     logger.info("User chat request classified as intent='%s'", intent)
 
-    # Personalized Health Context (Selective & De-identified)
-    health_context = await build_minimized_health_context(user_email, intent, message)
+    # Personalized Health Context (Selective, Validated & De-identified)
+    health_ctx = await build_structured_health_context(user_email, intent, message)
+    health_context = health_ctx.get("prompt_text", "")
+    context_used = bool(health_ctx.get("used"))
+    context_sources = health_ctx.get("sources", [])
+    missing_metrics = health_ctx.get("missing_fields", [])
+
+    # Real-time Doctor / Hospital Discovery & Actionable HealthPoint Routing
+    router_res = await route_healthcare_actions(
+        message=message,
+        intent=intent,
+        session=session,
+        lat=lat,
+        lng=lng,
+        location_query=location_query,
+        location_denied=bool(location_denied),
+    )
+    places = router_res.get("places", [])
+    places_error = router_res.get("places_error")
+    manual_maps_url = router_res.get("manual_maps_url")
+    requires_location = bool(router_res.get("requires_location"))
+    search_center = router_res.get("search_center")
+    actions = router_res.get("actions", [])
+    router_context = router_res.get("router_context", "")
+    session_updates = router_res.get("session_updates") or {}
 
     # RAG Retrieval (For clinical/health queries)
     rag_context = ""
@@ -178,7 +224,7 @@ async def chat_ai_controller(user_email: str, message: str, session_id: Optional
             rag_lines = [f"- [{h['source']}] {h['title']}: {h['content']}" for h in rag_hits]
             rag_context = "\n[CLINICAL GUIDELINES & REFERENCE DATA]:\n" + "\n".join(rag_lines)
 
-    system_instruction = _build_system_instruction(intent, health_context, rag_context)
+    system_instruction = _build_system_instruction(intent, health_context, rag_context, router_context)
 
     llm_service = get_llm_service()
     history_to_send = []
@@ -218,32 +264,51 @@ async def chat_ai_controller(user_email: str, message: str, session_id: Optional
         error_reason = "AI provider error"
         reply = _format_unavailable_message(llm_err, intent)
 
+    if intent == IntentType.EMERGENCY and "EMERGENCY" not in reply:
+        reply = "**URGENT MEDICAL EMERGENCY:** Call 112 (India) or 911 immediately.\n\n" + reply.strip()
+
     if ai_available and intent_data.get("requires_disclaimer") and SYSTEM_DISCLAIMER not in reply:
         reply = reply.strip() + SYSTEM_DISCLAIMER
 
     user_entry = {"role": "user", "content": message}
-    model_entry: Dict[str, Any] = {"role": "model", "content": reply}
+    model_entry: Dict[str, Any] = {
+        "role": "model",
+        "content": reply,
+        "context_used": context_used if ai_available else False,
+        "context_sources": context_sources if ai_available and context_used else [],
+        "places": places,
+        "places_error": places_error,
+        "manual_maps_url": manual_maps_url,
+        "requires_location": requires_location,
+        "search_center": search_center,
+        "actions": actions,
+    }
     if not ai_available:
         user_entry["ai_error"] = True
         model_entry["ai_error"] = True
 
     if db is not None and session.get("id") != "ephemeral":
+        update_doc: Dict[str, Any] = {
+            "$push": {
+                "messages": {
+                    "$each": [
+                        user_entry,
+                        model_entry,
+                    ]
+                }
+            }
+        }
+        if session_updates:
+            update_doc["$set"] = session_updates
         await db.chat_history.update_one(
             {"_id": ObjectId(session["id"]), "user_email": user_email},
-            {
-                "$push": {
-                    "messages": {
-                        "$each": [
-                            user_entry,
-                            model_entry,
-                        ]
-                    }
-                }
-            },
+            update_doc,
         )
         updated_session = await db.chat_history.find_one({"_id": ObjectId(session["id"]), "user_email": user_email})
         history_out = updated_session["messages"] if updated_session else session.get("messages", [])
     else:
+        if session_updates:
+            session.update(session_updates)
         history_out = session.get("messages", []) + [
             user_entry,
             model_entry,
@@ -253,6 +318,15 @@ async def chat_ai_controller(user_email: str, message: str, session_id: Optional
         "session_id": session["id"],
         "reply": reply,
         "intent": intent,
+        "context_used": context_used,
+        "context_sources": context_sources,
+        "missing_metrics": missing_metrics,
+        "places": places,
+        "places_error": places_error,
+        "manual_maps_url": manual_maps_url,
+        "requires_location": requires_location,
+        "search_center": search_center,
+        "actions": actions,
         "ai_available": ai_available,
         "error_reason": error_reason,
         "error_category": error_category,
@@ -260,11 +334,30 @@ async def chat_ai_controller(user_email: str, message: str, session_id: Optional
     }
 
 
-def _build_system_instruction(intent: str, health_context: str, rag_context: str) -> str:
-    """Creates a focused, natural system prompt tailored to the user's intent."""
+def _build_system_instruction(
+    intent: str,
+    health_context: str,
+    rag_context: str,
+    router_context: str = "",
+) -> str:
+    """Creates a strong, personalized HealthPoint AI system instruction tailored to intent."""
     base = (
-        "You are HealthPoint AI, a helpful, natural, and knowledgeable assistant with healthcare "
-        "expertise. Do not force non-medical conversations into medical topics."
+        "You are HealthPoint AI, a helpful, knowledgeable personal healthcare information assistant "
+        "working inside the HealthPoint platform. Answer casual or technical questions naturally without "
+        "forcing medical disclaimers."
+    )
+    clinical_guardrails = (
+        "STRICT SAFETY & HONESTY RULES:\n"
+        "1. Use ONLY the verified user measurements, timestamps, profile details, and uploaded documents "
+        "provided in the Authorized User Context below. NEVER invent or guess missing readings, lab values, "
+        "conditions, or medications.\n"
+        "2. Distinguish clearly between general medical knowledge and the user's recorded data.\n"
+        "3. Cite measurement timestamps when provided, and clearly distinguish current values from historical trends.\n"
+        "4. Compare historical readings ONLY when >=2 reliable past readings are provided.\n"
+        "5. NEVER claim to continuously monitor the user or connect to live wearables.\n"
+        "6. NEVER diagnose conditions, label someone simply 'healthy' or 'unhealthy' from a few vitals, "
+        "or recommend changing prescribed medications without consulting a licensed clinician.\n"
+        "7. Ask brief relevant follow-up questions or suggest consulting a doctor when appropriate."
     )
 
     if intent == IntentType.GREETING:
@@ -295,35 +388,92 @@ def _build_system_instruction(intent: str, health_context: str, rag_context: str
             "or go to the nearest emergency room without delay."
         )
 
-    if intent == IntentType.PERSONAL_HEALTH:
+    if intent == IntentType.HEALTH_OVERVIEW:
         return (
-            f"{base} Answer the user's question about their personal health or vitals using strictly the verified data below.\n"
-            f"{health_context}\n"
-            "If a requested measurement is not recorded, state that clearly without guessing or inventing values. "
-            "State clearly that your guidance is informational and not a medical diagnosis."
+            f"{base}\n{clinical_guardrails}\n"
+            "Format the response clearly in simple patient-friendly language using these exact sections:\n"
+            "### Your Health Overview\n"
+            "Summarize only the available recorded metrics and profile basics with their timestamps (or clearly state what has not been recorded).\n"
+            "### What Your Metrics Mean\n"
+            "Explain Heart Rate, Blood Pressure, Sleep, and BMI (plus any other recorded vitals) individually where available.\n"
+            "### Positive Observations\n"
+            "Note encouraging measurements or habits carefully without diagnosing or declaring someone completely 'healthy'.\n"
+            "### Areas to Improve\n"
+            "Identify practical areas for wellness improvement grounded in the recorded values.\n"
+            "### Recommendations\n"
+            "Give safe, practical lifestyle suggestions and ask 1-2 helpful follow-up questions (e.g., how they are feeling today).\n"
+            "### Missing Information\n"
+            "List the important measurements, lab panels, or medication details marked missing below so the user knows what to record next.\n"
+            f"\n{health_context}"
+            f"{rag_context}"
+        )
+
+    if intent in (IntentType.PERSONAL_HEALTH, IntentType.HEALTH_TREND, IntentType.MEDICATION_PERSONAL, IntentType.REPORT_ANALYSIS, IntentType.HEALTH_RECORDS, IntentType.PHARMACY, IntentType.INSURANCE):
+        return (
+            f"{base}\n{clinical_guardrails}\n"
+            "Answer the user's personal question directly using the verified HealthPoint data below. "
+            "If the specific requested metric, prescription, or report is not recorded, state that explicitly.\n"
+            f"{health_context}"
+            f"{rag_context}"
         )
 
     if intent == IntentType.DIET_NUTRITION:
         return (
-            f"{base} Provide structured, evidence-based nutrition guidance using only verified parameters below:\n"
+            f"{base}\n{clinical_guardrails}\n"
+            "Provide structured, evidence-based nutrition guidance using only verified parameters below:\n"
             f"{health_context}\nAvoid extreme or unsafe calorie deficits."
         )
 
     if intent == IntentType.FITNESS:
         return (
-            f"{base} Provide structured, safe fitness guidance tailored to any verified parameters below:\n"
+            f"{base}\n{clinical_guardrails}\n"
+            "Provide structured, safe fitness guidance tailored to any verified parameters below:\n"
             f"{health_context}\nInclude warmup, sets/repetitions, cooldown, and safety precautions."
         )
 
+    if intent in (IntentType.DOCTOR_DISCOVERY, IntentType.HOSPITAL_DISCOVERY):
+        return (
+            f"{base}\n{clinical_guardrails}\n"
+            "You are assisting with real-time medical facility / specialist discovery.\n"
+            "STRICT DISCOVERY RULES:\n"
+            "- NEVER invent doctors, clinics, hospitals, phone numbers, addresses, or hours.\n"
+            "- NEVER claim a facility is verified or has open appointment slots.\n"
+            "- ONLY claim a place is open right now if explicit current opening status was returned.\n"
+            "- If location is required, politely ask the user to allow browser location OR provide their city, area, or 6-digit PIN code.\n"
+            "- If OpenStreetMap facilities are listed below, summarize the top closest options clearly with distance and available contact details.\n"
+            "- If OpenStreetMap returned no listings or encountered an error, explain cleanly and provide the direct OpenStreetMap search link.\n"
+            f"{router_context}\n{health_context}"
+        )
+
+    if intent == IntentType.SYMPTOM_TRIAGE:
+        return (
+            f"{base}\n{clinical_guardrails}\n"
+            "You are guiding a user experiencing symptoms (such as fever, headache, cough, or discomfort).\n"
+            "Structure your response helpfully:\n"
+            "1. Ask 2-3 brief clarifying questions (onset, severity, other symptoms).\n"
+            "2. Provide safe, general self-care guidance without diagnosing or writing formal prescriptions/dosages.\n"
+            "3. Account for the user's age, allergies, and existing conditions ONLY if present in Authorized User Context below.\n"
+            "4. Clearly highlight red-flag warning symptoms when urgent evaluation or emergency services (112/108 in India or 911) are needed.\n"
+            "5. If nearby doctors/hospitals are included below (or if location is needed to search nearby doctors), integrate them clearly without fabricating any facilities.\n"
+            f"{router_context}\n{health_context}\n{rag_context}"
+        )
+
     instr = (
-        f"{base} Provide clear, empathetic, patient-friendly guidance on the healthcare topic. "
+        f"{base} Provide clear, empathetic, patient-friendly general medical information. "
         "Explain clearly that AI output is informational and not a medical diagnosis."
     )
+    if router_context:
+        instr += f"\n{router_context}"
     if health_context:
         instr += f"\n{health_context}"
     if rag_context:
         instr += f"\n{rag_context}"
     return instr
+
+
+async def get_health_context_controller(user_email: str) -> Dict[str, Any]:
+    """Returns authenticated user's live HealthPoint metrics, missing fields, and module counts."""
+    return await get_user_health_context_snapshot(user_email)
 
 
 async def get_chat_history_controller(user_email: str) -> Dict[str, Any]:
@@ -545,15 +695,63 @@ async def analyze_report_controller(
     }
 
 
-async def generate_diet_controller(age: int, weight: str, height: str, goal: str, restrictions: Optional[str] = None) -> Dict[str, Any]:
+async def generate_diet_controller(
+    age: int,
+    weight: str,
+    height: str,
+    goal: str,
+    restrictions: Optional[str] = None,
+    user_email: Optional[str] = None,
+    question: Optional[str] = None,
+    date_str: Optional[str] = None,
+) -> Dict[str, Any]:
+    logged_meals_summary = "No logged meals provided for today."
+    target_summary = ""
+    if user_email:
+        try:
+            from controllers.nutrition_controller import get_meals_by_date_controller, get_nutrition_goals_controller
+            meals = await get_meals_by_date_controller(user_email, date_str=date_str)
+            goals = await get_nutrition_goals_controller(user_email)
+            total_kcal = sum(int(m.get("calories", 0) or 0) for m in meals)
+            total_p = round(sum(float(m.get("protein", 0) or 0) for m in meals), 1)
+            total_c = round(sum(float(m.get("carbs", 0) or 0) for m in meals), 1)
+            total_f = round(sum(float(m.get("fat", 0) or 0) for m in meals), 1)
+            target_kcal = int(goals.get("calories") or 2000)
+            rem_kcal = target_kcal - total_kcal
+            target_summary = (
+                f"\nUser Daily Nutrition Targets: {target_kcal} kcal, Protein {goals.get('protein', 0)}g, "
+                f"Carbs {goals.get('carbs', 0)}g, Fat {goals.get('fat', 0)}g, Fiber {goals.get('fiber', 0)}g.\n"
+                f"Consumed So Far Today ({len(meals)} meal entries): {total_kcal} kcal "
+                f"(P: {total_p}g, C: {total_c}g, F: {total_f}g).\n"
+                f"Remaining Calorie Budget: {rem_kcal} kcal.\n"
+            )
+            if meals:
+                lines = [
+                    f"- {m.get('time', 'Meal')}: {m.get('name')} "
+                    f"({m.get('quantity', 1)} {m.get('unit', 'serving')}, {m.get('calories', 0)} kcal, "
+                    f"P:{m.get('protein', 0)}g C:{m.get('carbs', 0)}g F:{m.get('fat', 0)}g)"
+                    for m in meals[:12]
+                ]
+                logged_meals_summary = "\n".join(lines)
+        except Exception as e:
+            logger.warning("Could not attach user meal logs to AI diet planner: %s", type(e).__name__)
+
     prompt = (
-        f"Create a personalized nutrition and diet plan for:\n"
+        f"Create personalized nutrition guidance for:\n"
         f"- Age: {age}\n- Weight: {weight}\n- Height: {height}\n- Goal: {goal}\n"
-        f"- Restrictions: {restrictions or 'None'}"
+        f"- Restrictions: {restrictions or 'None'}\n"
+        f"{target_summary}"
+        f"\nLogged Foods Today:\n{logged_meals_summary}\n"
     )
+    if question:
+        prompt += f"\nSpecific User Request: {question.strip()}\n"
+
     system_instr = (
-        "You are a clinical nutrition assistant. Create a balanced daily calorie summary and structured meal plan "
-        "using clean markdown tables. Avoid unsafe crash diets. Remind the user this is informational only."
+        "You are a clinical nutrition assistant. Use ONLY the user's real logged meals and calorie targets provided "
+        "in the prompt; do NOT invent logged foods, lab values, or unverified packaged nutrition facts. "
+        "Provide realistic, culturally adaptable meal suggestions (including practical Indian and everyday options when helpful) "
+        "fitting the remaining calorie budget, formatted cleanly with markdown tables. Avoid unsafe crash diets. "
+        "Remind the user this is informational only and not a medical prescription."
     )
 
     llm_service = get_llm_service()

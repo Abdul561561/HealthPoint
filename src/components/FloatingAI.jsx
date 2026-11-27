@@ -142,7 +142,7 @@ export default function FloatingAI() {
             }`}
           >
             {/* Header Handle for Dragging */}
-            <div className="flex items-center justify-between p-3.5 bg-gradient-to-r from-primary-600/10 to-accent-600/10 border-b border-slate-150 dark:border-white/5 cursor-move flex-shrink-0 select-none rounded-t-2xl">
+            <div className="flex items-center justify-between p-3.5 bg-gradient-to-r from-primary-600/10 to-accent-600/10 border-b border-slate-200 dark:border-white/5 cursor-move flex-shrink-0 select-none rounded-t-2xl">
               <div className="flex items-center gap-2 drag-none">
                 <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center shadow-md">
                   <Bot className="w-4 h-4 text-white" />
@@ -205,7 +205,7 @@ export default function FloatingAI() {
                       className={`px-3 py-2 rounded-xl text-xs leading-relaxed ${
                         msg.role === 'user'
                           ? 'bg-primary-600 text-white rounded-br-md whitespace-pre-line shadow-md'
-                          : 'bg-slate-100 dark:bg-white/5 text-slate-800 dark:text-slate-200 rounded-bl-md shadow-sm border border-slate-150 dark:border-white/5'
+                          : 'bg-slate-100 dark:bg-white/5 text-slate-800 dark:text-slate-200 rounded-bl-md shadow-sm border border-slate-200 dark:border-white/5'
                       }`}
                     >
                       {msg.role === 'user' ? msg.message : <StructuredResponse text={msg.message} type="chat" />}
@@ -220,7 +220,7 @@ export default function FloatingAI() {
                   <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center flex-shrink-0">
                     <Bot className="w-3.5 h-3.5 text-white" />
                   </div>
-                  <div className="px-3 py-2 rounded-xl rounded-bl-md bg-slate-50 dark:bg-white/5 text-[10px] text-slate-400 font-semibold border border-slate-150 dark:border-white/5">
+                  <div className="px-3 py-2 rounded-xl rounded-bl-md bg-slate-50 dark:bg-white/5 text-[10px] text-slate-400 font-semibold border border-slate-200 dark:border-white/5">
                     Writing...
                   </div>
                 </div>
@@ -244,7 +244,7 @@ export default function FloatingAI() {
             )}
 
             {/* Input area */}
-            <div className="p-3 border-t border-slate-150 dark:border-white/5 flex-shrink-0 flex items-center gap-2">
+            <div className="p-3 border-t border-slate-200 dark:border-white/5 flex-shrink-0 flex items-center gap-2">
               <input
                 type="text"
                 value={input}

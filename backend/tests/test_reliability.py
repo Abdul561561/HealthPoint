@@ -252,4 +252,4 @@ async def test_31_503_high_demand_falls_back_to_flash_lite():
                         reply = await llm.generate_completion(messages=[{"role": "user", "content": "hi"}])
 
     assert reply == "Hello from Flash-Lite fallback!"
-    assert models_called == ["gemini-3.8-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite"]
+    assert models_called == ["gemini-3.8-flash", "gemini-3.5-flash-lite"]

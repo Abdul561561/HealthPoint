@@ -1,623 +1,953 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  AlertTriangle, Phone, ShieldAlert, MapPin, Plus, Heart, User, Check, X,
-  Compass, Clock, Navigation
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  AlertTriangle,
+  Check,
+  Clock,
+  Copy,
+  Edit3,
+  ExternalLink,
+  Heart,
+  LocateFixed,
+  MapPin,
+  MessageSquare,
+  Navigation,
+  Phone,
+  PhoneCall,
+  Plus,
+  RefreshCw,
+  Share2,
+  ShieldAlert,
+  ShieldCheck,
+  StopCircle,
+  Trash2,
+  X,
 } from 'lucide-react';
+import { useDispatch, useSelector } from 'react-redux';
 import { useAuth } from '../hooks/useAuth';
-import api from '../services/api';
-import { searchNearbyHospitals } from '../services/openMapsApi';
+import { addToast } from '../redux/slices/uiSlice';
+import { loadNotifications } from '../redux/slices/notificationSlice';
+import { searchAddress, searchNearbyHospitals } from '../services/openMapsApi';
+import {
+  activateEmergencySos,
+  cancelEmergencySos,
+  createEmergencyContact,
+  deleteEmergencyContact,
+  fetchEmergencyConfig,
+  fetchEmergencyContacts,
+  fetchEmergencyHistory,
+  stopSosLocationSharing,
+  updateEmergencyContact,
+} from '../services/emergencyApi';
 
-const roundDistance = (lat1, lon1, lat2, lon2) => {
-  if (!lat1 || !lon1 || !lat2 || !lon2) return "1.2";
-  const R = 6371; // Radius of the earth in km
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-    Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  const d = R * c; // Distance in km
-  return d.toFixed(1);
+const STATUS_BADGE = {
+  Delivered: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30',
+  Sent: 'bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30',
+  Pending: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30',
+  Failed: 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30',
+  'Manual Fallback Required': 'bg-amber-500/15 text-amber-800 dark:text-amber-200 border-amber-500/30',
 };
 
 export default function Emergency() {
+  const dispatch = useDispatch();
   const { user } = useAuth();
-  const [contacts, setContacts] = useState([]);
-  const [sosActive, setSosActive] = useState(false);
-  const [countdown, setCountdown] = useState(5);
-  const [sosSent, setSosSent] = useState(false);
+  const uploadedPrescription = useSelector((s) => s.pharmacy?.uploadedPrescription);
 
-  useEffect(() => {
-    const defaultContacts = [
-      { id: 1, name: 'City Hospital Ambulance', relation: 'Ambulance Support', phone: '102' },
-      { id: 2, name: 'National Emergency Help', relation: 'SOS Command', phone: '112' },
-      { id: 3, name: 'Red Cross Medical Help', relation: 'First Aid Support', phone: '108' }
-    ];
-    if (user?.emergencyContact) {
-      const parts = user.emergencyContact.split('—');
-      const name = parts[0]?.trim() || 'Primary Contact';
-      const phone = parts[1]?.trim() || '';
-      setContacts([
-        { id: 0, name, relation: 'Primary Emergency Contact', phone },
-        ...defaultContacts
-      ]);
-    } else {
-      setContacts(defaultContacts);
-    }
-  }, [user]);
-  
-  // Coordinates and dynamic hospitals state
-  const [coords, setCoords] = useState(null);
+  const [config, setConfig] = useState(null);
+  const [contacts, setContacts] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Location state (explicit permission or manual entry — never hardcoded)
+  const [locationInfo, setLocationInfo] = useState({
+    lat: null,
+    lng: null,
+    accuracy: null,
+    source: 'unavailable', // gps | manual | unavailable
+    label: '',
+    capturedAt: null,
+    sharingStopped: false,
+  });
+  const [locating, setLocating] = useState(false);
+  const [manualArea, setManualArea] = useState('');
+
+  // Nearby hospitals (OSM)
   const [hospitals, setHospitals] = useState([]);
+  const [hospitalsLoading, setHospitalsLoading] = useState(false);
+  const [hospitalsError, setHospitalsError] = useState('');
   const mapRef = useRef(null);
   const leafletMap = useRef(null);
-  
-  // Custom contact modal/form states
-  const [showAddContact, setShowAddContact] = useState(false);
-  const [newContactName, setNewContactName] = useState('');
-  const [newContactRelation, setNewContactRelation] = useState('');
-  const [newContactPhone, setNewContactPhone] = useState('');
 
-  // Countdown timer for SOS
-  useEffect(() => {
-    let timer;
-    if (sosActive && countdown > 0) {
-      timer = setTimeout(() => setCountdown(countdown - 1), 1000);
-    } else if (sosActive && countdown === 0) {
-      const sendSOSAlert = async () => {
-        try {
-          const payload = {
-            latitude: coords?.lat || 12.9716,
-            longitude: coords?.lng || 77.5946,
-            contacts: contacts.map(c => ({
-              name: c.name,
-              relation: c.relation || 'Emergency Contact',
-              phone: c.phone
-            }))
-          };
-          await api.post('/emergency/sos', payload);
-          setSosSent(true);
-          setSosActive(false);
-        } catch (err) {
-          console.error("Failed to send real-time SOS distress beacon to database:", err);
-          // Set to sent anyway for UX fallback
-          setSosSent(true);
-          setSosActive(false);
-        }
-      };
-      sendSOSAlert();
+  // SOS confirmation & active event state
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [sosSubmitting, setSosSubmitting] = useState(false);
+  const [activeEvent, setActiveEvent] = useState(null);
+  const [sendEmailFallback, setSendEmailFallback] = useState(true);
+  const [sosNotes, setSosNotes] = useState('');
+  const [copiedId, setCopiedId] = useState(false);
+
+  // Contact modal state
+  const [contactModalOpen, setContactModalOpen] = useState(false);
+  const [editingContactId, setEditingContactId] = useState(null);
+  const [cName, setCName] = useState('');
+  const [cRelation, setCRelation] = useState('');
+  const [cPhone, setCPhone] = useState('');
+  const [cEmail, setCEmail] = useState('');
+  const [cPriority, setCPriority] = useState(1);
+  const [cPrimary, setCPrimary] = useState(false);
+  const [contactError, setContactError] = useState('');
+
+  const loadEmergencyState = useCallback(async () => {
+    try {
+      const [cfg, cts, hist] = await Promise.all([
+        fetchEmergencyConfig(),
+        fetchEmergencyContacts(),
+        fetchEmergencyHistory(),
+      ]);
+      setConfig(cfg);
+      setContacts(Array.isArray(cts) ? cts : []);
+      const histList = Array.isArray(hist) ? hist : [];
+      setHistory(histList);
+      const currentActive = histList.find((ev) => ev.status === 'active');
+      if (currentActive) setActiveEvent(currentActive);
+    } catch {
+      dispatch(addToast({ title: 'Emergency Data Error', message: 'Failed to load emergency contacts or history.', type: 'error' }));
+    } finally {
+      setLoading(false);
     }
-    return () => clearTimeout(timer);
-  }, [sosActive, countdown, coords, contacts]);
+  }, [dispatch]);
 
-  // Fetch coordinates on mount
-  useEffect(() => {
-    if (navigator.geolocation) {
+  const captureBrowserGps = useCallback(() => {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) {
+        setLocationInfo((prev) => ({ ...prev, source: prev.lat ? prev.source : 'unavailable' }));
+        resolve(null);
+        return;
+      }
+      setLocating(true);
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          const next = {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy ? Math.round(pos.coords.accuracy) : null,
+            source: 'gps',
+            label: 'Browser GPS Signal',
+            capturedAt: new Date().toISOString(),
+            sharingStopped: false,
+          };
+          setLocationInfo(next);
+          setLocating(false);
+          resolve(next);
         },
-        (err) => {
-          console.log("Geolocation error, using default Bengaluru coords:", err);
-          setCoords({ lat: 12.9716, lng: 77.5946 }); // Fallback: Bengaluru
-        }
+        () => {
+          setLocationInfo((prev) => ({
+            ...prev,
+            source: prev.lat ? prev.source : 'unavailable',
+          }));
+          setLocating(false);
+          resolve(null);
+        },
+        { enableHighAccuracy: true, timeout: 9000 }
       );
-    } else {
-      setCoords({ lat: 12.9716, lng: 77.5946 });
-    }
+    });
   }, []);
 
-  // Fetch nearby hospitals from backend doctors list (amenities = hospital, clinic)
   useEffect(() => {
-    if (!coords) return;
-    const fetchHospitals = async () => {
-      try {
-        const list = await searchNearbyHospitals(coords.lat, coords.lng, 8000);
-        setHospitals(list.slice(0, 4));
-      } catch (err) {
-        console.error("Failed to load hospitals:", err);
-        setHospitals([
-          { id: 1, name: 'Central Emergency Hospital', distance: '0.8 km', type: 'General Hospital', phone: '+91 80 2222 1111', ambulancePhone: '108', latitude: coords.lat + 0.005, longitude: coords.lng + 0.005 },
-          { id: 2, name: 'City Trauma Care', distance: '1.5 km', type: 'Emergency Clinic', phone: '+91 80 3333 2222', ambulancePhone: '102', latitude: coords.lat - 0.007, longitude: coords.lng + 0.003 },
-          { id: 3, name: 'Fortis Hospital Nearby', distance: '2.3 km', type: 'Super Specialty', phone: '+91 80 4444 3333', ambulancePhone: '112', latitude: coords.lat + 0.004, longitude: coords.lng - 0.008 }
-        ]);
-      }
-    };
-    fetchHospitals();
-  }, [coords]);
+    Promise.resolve().then(() => {
+      loadEmergencyState();
+      captureBrowserGps();
+    });
+  }, [loadEmergencyState, captureBrowserGps]);
 
-  // Initialize Leaflet Map for hospitals
+  const handleManualLocationSearch = async (e) => {
+    e.preventDefault();
+    if (!manualArea.trim()) return;
+    setLocating(true);
+    setHospitalsError('');
+    try {
+      const results = await searchAddress(manualArea.trim());
+      if (results?.length) {
+        const top = results[0];
+        setLocationInfo({
+          lat: top.lat,
+          lng: top.lng,
+          accuracy: null,
+          source: 'manual',
+          label: `Manually Provided: ${top.display_name}`,
+          capturedAt: new Date().toISOString(),
+          sharingStopped: false,
+        });
+      } else {
+        setHospitalsError('Could not locate that city, locality, or PIN code via OpenStreetMap Nominatim.');
+      }
+    } catch {
+      setHospitalsError('Unable to resolve manual location right now.');
+    } finally {
+      setLocating(false);
+    }
+  };
+
+  // Load nearby OSM hospitals when coordinates are active
+  useEffect(() => {
+    if (!locationInfo.lat || !locationInfo.lng || locationInfo.sharingStopped) return undefined;
+    let active = true;
+    Promise.resolve().then(async () => {
+      if (!active) return;
+      setHospitalsLoading(true);
+      setHospitalsError('');
+      try {
+        const list = await searchNearbyHospitals(locationInfo.lat, locationInfo.lng, 8000);
+        if (active) setHospitals(list.slice(0, 6));
+      } catch (err) {
+        if (active) {
+          setHospitals([]);
+          setHospitalsError(err.message || 'Unable to load nearby hospitals from OpenStreetMap.');
+        }
+      } finally {
+        if (active) setHospitalsLoading(false);
+      }
+    });
+    return () => { active = false; };
+  }, [locationInfo.lat, locationInfo.lng, locationInfo.sharingStopped]);
+
+  // Render Leaflet OpenStreetMap view
   useEffect(() => {
     const L = window.L;
-    if (!coords || !mapRef.current || !hospitals.length || !L) return;
+    if (!locationInfo.lat || !locationInfo.lng || locationInfo.sharingStopped || !mapRef.current || !L) return;
 
     if (leafletMap.current) {
       leafletMap.current.remove();
     }
-
-    // Initialize Map
-    leafletMap.current = L.map(mapRef.current).setView([coords.lat, coords.lng], 14);
-
-    // CartoDB Dark Matter tiles for dark mode, OpenStreetMap for light mode
-    const isDarkMode = document.documentElement.classList.contains('dark');
-    const tileUrl = isDarkMode 
-      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-      : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-    const attribution = isDarkMode
-      ? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-      : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-
-    L.tileLayer(tileUrl, {
+    leafletMap.current = L.map(mapRef.current).setView([locationInfo.lat, locationInfo.lng], 14);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      attribution: attribution
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(leafletMap.current);
 
-    // Draw user marker
-    const userPulseIcon = L.divIcon({
-      html: `<div class="relative w-6 h-6 flex items-center justify-center">
-               <div class="absolute w-4 h-4 bg-primary-500 rounded-full border-2 border-white shadow-lg animate-ping"></div>
-               <div class="absolute w-3.5 h-3.5 bg-primary-600 rounded-full border-2 border-white shadow-md"></div>
-             </div>`,
-      className: 'custom-user-pin'
+    const originIcon = L.divIcon({
+      html: `<div class="relative w-6 h-6 flex items-center justify-center"><div class="absolute w-4 h-4 bg-rose-500 rounded-full border-2 border-white shadow-lg animate-ping"></div><div class="w-3.5 h-3.5 bg-rose-600 rounded-full border-2 border-white shadow-md"></div></div>`,
+      className: 'custom-sos-pin',
     });
-    L.marker([coords.lat, coords.lng], { icon: userPulseIcon })
+    L.marker([locationInfo.lat, locationInfo.lng], { icon: originIcon })
       .addTo(leafletMap.current)
-      .bindPopup('<b>You are here (SOS origin)</b>')
+      .bindPopup(
+        `<b>${locationInfo.source === 'manual' ? 'Manually Provided Location' : 'Current GPS Location'}</b><br/><span class="text-xs">${locationInfo.lat.toFixed(5)}, ${locationInfo.lng.toFixed(5)}</span>`
+      )
       .openPopup();
 
-    // Draw hospital markers
-    hospitals.forEach(hosp => {
+    hospitals.forEach((hosp) => {
       if (hosp.latitude && hosp.longitude) {
-        const hospMarkerIcon = L.divIcon({
-          html: `<div class="w-8 h-8 rounded-xl bg-gradient-to-br from-rose-500 to-rose-600 flex items-center justify-center border-2 border-white shadow-lg font-bold text-white text-sm">
-                   🏥
-                 </div>`,
-          className: 'custom-hospital-pin'
-        });
-        L.marker([hosp.latitude, hosp.longitude], { icon: hospMarkerIcon })
+        L.marker([hosp.latitude, hosp.longitude])
           .addTo(leafletMap.current)
-          .bindPopup(`
-            <div class="p-1 max-w-[200px]">
-              <h4 class="font-bold text-slate-900 leading-tight">${hosp.name}</h4>
-              <p class="text-[10px] text-rose-500 font-semibold mt-0.5">${hosp.type}</p>
-              <p class="text-[10px] text-slate-707 font-bold mt-1">Distance: ${hosp.distance}</p>
-              <a href="tel:${hosp.phone}" class="block text-center mt-2 py-1 bg-rose-500 text-white text-[10px] font-bold rounded hover:bg-rose-600 transition-all">Call Emergency</a>
-            </div>
-          `);
+          .bindPopup(`<strong>${hosp.name}</strong><br/><span class="text-xs">${hosp.distance}</span>`);
       }
     });
 
-    // Cleanup on unmount
     return () => {
       if (leafletMap.current) {
         leafletMap.current.remove();
         leafletMap.current = null;
       }
     };
-  }, [coords, hospitals]);
+  }, [locationInfo, hospitals]);
 
-  const triggerSOS = () => {
-    setSosActive(true);
-    setCountdown(5);
-    setSosSent(false);
+  const handleConfirmSos = async () => {
+    setSosSubmitting(true);
+    try {
+      // Refresh GPS right before activation if browser supports it and user has not entered manual location
+      let latestLoc = locationInfo;
+      if (locationInfo.source !== 'manual') {
+        const fresh = await captureBrowserGps();
+        if (fresh) latestLoc = fresh;
+      }
+
+      const payload = {
+        latitude: latestLoc.sharingStopped ? null : latestLoc.lat,
+        longitude: latestLoc.sharingStopped ? null : latestLoc.lng,
+        accuracy_meters: latestLoc.accuracy,
+        location_source: latestLoc.lat && !latestLoc.sharingStopped ? latestLoc.source : 'unavailable',
+        location_label: latestLoc.label || undefined,
+        captured_at: latestLoc.capturedAt || new Date().toISOString(),
+        idempotency_key: `sos_${Date.now()}`,
+        send_email_fallback: sendEmailFallback,
+        notes: sosNotes.trim() || undefined,
+      };
+      const event = await activateEmergencySos(payload);
+      setActiveEvent(event);
+      setHistory((prev) => [event, ...prev]);
+      setConfirmOpen(false);
+      setSosNotes('');
+      dispatch(loadNotifications());
+      if (typeof window !== 'undefined' && 'Notification' in window && window.Notification.permission === 'granted') {
+        try {
+          new window.Notification('Emergency SOS Activated', {
+            body: `Alert recorded for ${user?.name || 'your account'}. Review contact delivery status.`,
+            tag: `sos_${event.id}`,
+          });
+        } catch {
+          // Non-fatal browser notification error
+        }
+      }
+      dispatch(addToast({ title: 'SOS Activated', message: 'Emergency event logged. Review delivery statuses below.', type: 'success' }));
+    } catch (err) {
+      const msg = err.response?.data?.detail || 'Unable to activate SOS right now. Dial 112 directly.';
+      dispatch(addToast({ title: 'SOS Error', message: String(msg), type: 'error' }));
+      setConfirmOpen(false);
+    } finally {
+      setSosSubmitting(false);
+    }
   };
 
-  const cancelSOS = () => {
-    setSosActive(false);
-    setCountdown(5);
+  const handleCancelActiveSos = async (eventId) => {
+    try {
+      const updated = await cancelEmergencySos(eventId, 'User confirmed safe / cancelled');
+      setActiveEvent(null);
+      setHistory((prev) => prev.map((ev) => (ev.id === eventId ? updated : ev)));
+      dispatch(loadNotifications());
+      dispatch(addToast({ title: 'SOS Cancelled', message: 'Emergency alert marked cancelled and location sharing stopped.' }));
+    } catch {
+      dispatch(addToast({ title: 'Cancel Failed', message: 'Could not cancel emergency alert.', type: 'error' }));
+    }
   };
 
-  const handleAddContact = (e) => {
+  const handleStopSharing = async () => {
+    setLocationInfo((prev) => ({ ...prev, sharingStopped: true }));
+    if (activeEvent?.id && activeEvent.location_sharing_active) {
+      try {
+        const updated = await stopSosLocationSharing(activeEvent.id);
+        setActiveEvent(updated);
+        setHistory((prev) => prev.map((ev) => (ev.id === updated.id ? updated : ev)));
+      } catch {
+        // Local sharing already stopped
+      }
+    }
+    dispatch(addToast({ title: 'Location Sharing Stopped', message: 'Live location display paused.' }));
+  };
+
+  const openAddContact = () => {
+    setEditingContactId(null);
+    setCName('');
+    setCRelation('');
+    setCPhone('');
+    setCEmail('');
+    setCPriority(contacts.length + 1);
+    setCPrimary(contacts.length === 0);
+    setContactError('');
+    setContactModalOpen(true);
+  };
+
+  const openEditContact = (ct) => {
+    setEditingContactId(ct.id);
+    setCName(ct.name);
+    setCRelation(ct.relation);
+    setCPhone(ct.phone);
+    setCEmail(ct.email || '');
+    setCPriority(ct.priority || 1);
+    setCPrimary(Boolean(ct.is_primary));
+    setContactError('');
+    setContactModalOpen(true);
+  };
+
+  const handleSaveContact = async (e) => {
     e.preventDefault();
-    if (!newContactName || !newContactPhone || !newContactRelation) return;
-    const newContact = {
-      id: contacts.length + 1,
-      name: newContactName,
-      relation: newContactRelation,
-      phone: newContactPhone
+    setContactError('');
+    const payload = {
+      name: cName.trim(),
+      relation: cRelation.trim(),
+      phone: cPhone.trim(),
+      email: cEmail.trim() || undefined,
+      priority: Number(cPriority) || 1,
+      is_primary: cPrimary,
     };
-    setContacts([...contacts, newContact]);
-    setNewContactName('');
-    setNewContactRelation('');
-    setNewContactPhone('');
-    setShowAddContact(false);
+    try {
+      if (editingContactId) {
+        await updateEmergencyContact(editingContactId, payload);
+      } else {
+        await createEmergencyContact(payload);
+      }
+      setContactModalOpen(false);
+      await loadEmergencyState();
+      dispatch(addToast({ title: 'Contact Saved', message: `${payload.name} updated in your emergency list.` }));
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      setContactError(Array.isArray(detail) ? detail.map((d) => d.msg).join('; ') : detail || 'Invalid contact details.');
+    }
   };
 
-  const handleDeleteContact = (id) => {
-    setContacts(contacts.filter(c => c.id !== id));
+  const handleRemoveContact = async (id) => {
+    try {
+      await deleteEmergencyContact(id);
+      setContacts((prev) => prev.filter((c) => c.id !== id));
+      dispatch(addToast({ title: 'Contact Removed', message: 'Emergency contact deleted.' }));
+    } catch {
+      dispatch(addToast({ title: 'Delete Failed', message: 'Could not delete contact.', type: 'error' }));
+    }
   };
+
+  const handleShareLocationNative = async () => {
+    const mapsLink = locationInfo.lat && locationInfo.lng
+      ? `https://www.google.com/maps?q=${locationInfo.lat.toFixed(6)},${locationInfo.lng.toFixed(6)}`
+      : null;
+    const text = `EMERGENCY LOCATION: ${user?.name || 'HealthPoint User'} — ${mapsLink || locationInfo.label || 'Location unavailable'}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'HealthPoint Emergency Location', text, url: mapsLink || undefined });
+        return;
+      } catch {
+        // Fallback to copy
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      dispatch(addToast({ title: 'Location Copied', message: 'Emergency location text copied to clipboard.' }));
+    } catch {
+      dispatch(addToast({ title: 'Copy Unavailable', message: text }));
+    }
+  };
+
+  const primaryContact = contacts.find((c) => c.is_primary) || contacts[0] || null;
+  const activeMapsUrl = activeEvent?.maps_url || (locationInfo.lat && locationInfo.lng ? `https://www.google.com/maps?q=${locationInfo.lat.toFixed(6)},${locationInfo.lng.toFixed(6)}` : null);
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
-          <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping animate-pulse-slow" />
-          Emergency SOS
-        </h1>
-        <p className="text-slate-550 dark:text-slate-400 mt-1 text-sm font-semibold">Immediate medical assistance dispatch, GPS live location broadcast, and clinical profile preview.</p>
+    <div className="space-y-6 max-w-7xl mx-auto pb-8">
+      {/* Header + Immediate Direct Call Bar (112 India + Primary Contact) */}
+      <div className="glass-card p-5 border-2 border-rose-500/25 bg-rose-500/[0.03] dark:bg-rose-950/20 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2.5">
+            <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping" />
+            Emergency SOS Command
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1">
+            Immediate 112 calling, confirmed SOS alert broadcast, real contact delivery status, and OpenStreetMap location sharing.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2.5">
+          <a
+            href="tel:112"
+            className="px-4 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-sm flex items-center gap-2 shadow-lg shadow-rose-500/30 active:scale-95 transition-all"
+          >
+            <PhoneCall className="w-4 h-4" /> Call 112 (India)
+          </a>
+          <a
+            href="tel:108"
+            className="px-4 py-3 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold text-sm flex items-center gap-2 active:scale-95 transition-all"
+          >
+            <Phone className="w-4 h-4" /> Ambulance 108
+          </a>
+          {primaryContact && (
+            <a
+              href={`tel:${primaryContact.phone}`}
+              className="px-4 py-3 rounded-xl border border-rose-300 dark:border-rose-500/40 bg-white dark:bg-dark-100 text-rose-700 dark:text-rose-300 font-bold text-sm flex items-center gap-2"
+            >
+              <Phone className="w-4 h-4" /> Call {primaryContact.name}
+            </a>
+          )}
+        </div>
       </div>
 
+      {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Left Column (lg:col-span-2) - SOS Broadcast Button & GPS & Map */}
+        {/* Left 2 Cols: SOS Trigger / Active Alert + Delivery Statuses + Location & OSM Map */}
         <div className="lg:col-span-2 space-y-6">
-          
-          {/* SOS Distress Beacon Panel */}
-          <div className="glass-card p-6 flex flex-col items-center justify-center text-center relative overflow-hidden bg-rose-500/[0.03] dark:bg-rose-500/[0.02] border-rose-500/25">
-            <div className="absolute inset-0 bg-grid opacity-10 pointer-events-none" />
-            
-            <AnimatePresence mode="wait">
-              {!sosActive && !sosSent ? (
-                <motion.div
-                  key="inactive"
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className="space-y-5 flex flex-col items-center py-4"
+          {/* SOS Trigger / Active SOS Box */}
+          <div className="glass-card p-6 text-center space-y-5 border border-rose-500/25">
+            {!activeEvent ? (
+              <div className="flex flex-col items-center space-y-4 py-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmOpen(true)}
+                  className="w-48 h-48 rounded-full bg-gradient-to-br from-rose-500 via-rose-600 to-red-700 text-white font-black text-xl shadow-2xl shadow-rose-500/40 hover:scale-[1.03] active:scale-95 transition-all border-4 border-rose-300/30 flex flex-col items-center justify-center gap-1.5"
                 >
-                  <div className="relative">
-                    {/* Pulsing ring animation */}
-                    <div className="absolute inset-0 rounded-full bg-rose-600/30 blur-xl animate-ping" />
-                    <button
-                      onClick={triggerSOS}
-                      className="w-44 h-44 rounded-full bg-gradient-to-br from-rose-500 via-rose-600 to-red-700 text-white font-black text-2xl shadow-glow-rose hover:scale-[1.03] active:scale-95 transition-all duration-300 relative border-4 border-rose-400/20 flex flex-col items-center justify-center gap-1"
-                    >
-                      <ShieldAlert className="w-9 h-9 animate-bounce" />
-                      <span>TRIGGER SOS</span>
-                      <span className="text-[9px] font-bold uppercase tracking-widest text-rose-200">5s COUNTDOWN</span>
-                    </button>
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-black text-rose-600 dark:text-rose-400">Emergency Distress Beacon</h3>
-                    <p className="text-xs text-slate-550 dark:text-slate-400 max-w-sm mt-1 font-semibold leading-relaxed">
-                      Activating SOS alerts nearby hospital dispatchers, logs your location coordinates, and sends SMS alerts to emergency contacts.
+                  <ShieldAlert className="w-11 h-11" />
+                  <span>ACTIVATE SOS</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-rose-100">Confirmation Required</span>
+                </button>
+                <div className="max-w-md space-y-1.5">
+                  <p className="text-xs text-slate-600 dark:text-slate-300">
+                    Pressing Activate SOS asks for explicit confirmation, captures your current GPS coordinates, records the emergency event, and prepares/sends alerts to your {contacts.length} configured contact(s).
+                  </p>
+                  {config && (
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Backend SMS Provider:{' '}
+                      <strong>{config.sms_configured ? config.sms_provider.toUpperCase() : 'Not configured (Mobile SMS fallback ready)'}</strong>
+                      {' · '}Email Fallback:{' '}
+                      <strong>{config.email_fallback_configured ? 'Available' : 'Not configured'}</strong>
                     </p>
-                  </div>
-                </motion.div>
-              ) : sosActive ? (
-                <motion.div
-                  key="active"
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className="space-y-6 flex flex-col items-center py-4"
-                >
-                  <div className="w-44 h-44 rounded-full border-8 border-rose-500 flex items-center justify-center relative bg-rose-55 dark:bg-rose-950/20 shadow-inner">
-                    <div className="absolute inset-0 rounded-full bg-rose-500/20 animate-ping" />
-                    <span className="text-6xl font-black text-rose-600 dark:text-rose-400">{countdown}</span>
-                  </div>
-                  <div className="space-y-2">
-                    <h3 className="text-lg font-black text-slate-900 dark:text-white">Broadcasting Beacon in {countdown}s</h3>
-                    <p className="text-xs text-slate-550 dark:text-slate-400 font-semibold">Distress signals are preparing. Click cancel below to abort.</p>
-                  </div>
-                  <button
-                    onClick={cancelSOS}
-                    className="px-6 py-2.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 text-xs font-bold flex items-center gap-2 transition-all shadow-md"
-                  >
-                    <X className="w-4 h-4" />
-                    Cancel SOS Broadcast
-                  </button>
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="sent"
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className="space-y-5 flex flex-col items-center py-4"
-                >
-                  <div className="w-20 h-20 rounded-full bg-green-500/10 border border-green-500 text-green-500 flex items-center justify-center shadow-md">
-                    <Check className="w-10 h-10 stroke-[3]" />
-                  </div>
-                  <div className="space-y-2">
-                    <h3 className="text-xl font-black text-slate-900 dark:text-white">SOS Distress Sent!</h3>
-                    <p className="text-xs text-slate-550 dark:text-slate-400 max-w-sm font-semibold leading-relaxed mx-auto">
-                      Medical response dispatchers have been notified of your location. Your emergency contacts have received SMS notifications.
-                    </p>
-                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-150 dark:border-white/5 text-left text-xs space-y-1 max-w-md mx-auto">
-                      <p className="font-extrabold text-slate-805 dark:text-white flex items-center gap-1.5 uppercase tracking-wider text-[10px]">
-                        <MapPin className="w-3.5 h-3.5 text-primary-500" />
-                        Live GPS Coordinates Broadcasted
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="text-left space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-rose-200 dark:border-rose-500/20">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-10 h-10 rounded-xl bg-rose-500/15 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+                      <AlertTriangle className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-black text-base text-rose-600 dark:text-rose-400">
+                        Active Emergency Alert #{activeEvent.id.slice(-6)}
+                      </h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Activated: {activeEvent.date} · Location source: {activeEvent.location_source}
                       </p>
-                      <p className="text-slate-400 font-semibold text-[10px]">Latitude: {coords?.lat?.toFixed(5) || "12.9716"}° N, Longitude: {coords?.lng?.toFixed(5) || "77.5946"}° E</p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => setSosSent(false)}
-                    className="px-5 py-2 rounded-xl border border-rose-500/30 text-rose-500 hover:bg-rose-500 hover:text-white text-xs font-bold transition-all"
-                  >
-                    Reset Distress Alarm
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                  <div className="flex flex-wrap gap-2">
+                    {activeEvent.location_sharing_active && (
+                      <button
+                        type="button"
+                        onClick={handleStopSharing}
+                        className="btn-secondary py-1.5 px-3 text-xs text-amber-700 dark:text-amber-300"
+                      >
+                        <StopCircle className="w-3.5 h-3.5" /> Stop Sharing
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleCancelActiveSos(activeEvent.id)}
+                      className="px-3.5 py-1.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold flex items-center gap-1.5"
+                    >
+                      <X className="w-3.5 h-3.5" /> Cancel SOS (I Am Safe)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Alert Message & Copy / Google Maps Link */}
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-dark-100 border border-slate-200 dark:border-white/10 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold uppercase text-slate-500 dark:text-slate-400">Emergency Message</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard?.writeText(activeEvent.alert_message);
+                          setCopiedId(true);
+                          setTimeout(() => setCopiedId(false), 2000);
+                        }}
+                        className="text-xs font-semibold text-primary-600 dark:text-primary-400 flex items-center gap-1"
+                      >
+                        {copiedId ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        {copiedId ? 'Copied' : 'Copy Text'}
+                      </button>
+                      {activeMapsUrl && (
+                        <a href={activeMapsUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                          <ExternalLink className="w-3.5 h-3.5" /> Google Maps Link
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-800 dark:text-slate-100 leading-relaxed font-medium">
+                    {activeEvent.alert_message}
+                  </p>
+                </div>
+
+                {/* Honest Per-Contact Delivery Statuses */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Contact Delivery Status
+                  </h4>
+                  {(activeEvent.delivery_results || []).length === 0 ? (
+                    <p className="text-xs text-amber-700 dark:text-amber-300">
+                      No emergency contacts were configured. Add contacts on the right and share manually or dial 112.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {activeEvent.delivery_results.map((res, idx) => (
+                        <div key={`${res.phone}_${idx}`} className="p-3 rounded-xl border border-slate-200 dark:border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                          <div className="space-y-0.5 text-xs">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-bold text-slate-900 dark:text-white">{res.name}</span>
+                              <span className="text-slate-500 dark:text-slate-400">({res.phone})</span>
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${STATUS_BADGE[res.sms_status] || STATUS_BADGE.Pending}`}>
+                                SMS: {res.sms_status}
+                              </span>
+                              {res.email_status && (
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${STATUS_BADGE[res.email_status] || STATUS_BADGE.Pending}`}>
+                                  Email: {res.email_status}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">{res.sms_detail}</p>
+                            {res.email_detail && (
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400">{res.email_detail}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {res.sms_composer_url && (
+                              <a
+                                href={res.sms_composer_url}
+                                className="btn-primary py-1.5 px-3 text-xs"
+                              >
+                                <MessageSquare className="w-3.5 h-3.5" /> Send SMS
+                              </a>
+                            )}
+                            <a href={`tel:${res.phone}`} className="btn-secondary py-1.5 px-2.5 text-xs">
+                              <Phone className="w-3.5 h-3.5" /> Call
+                            </a>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Emergency Contacts builder */}
-          <div className="glass-card p-6">
-            <div className="flex items-center justify-between pb-3.5 border-b border-slate-200 dark:border-white/5 mb-4">
+          {/* Emergency Location Sharing + OpenStreetMap */}
+          <div className="glass-card p-5 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h3 className="text-sm font-black text-slate-900 dark:text-white">Emergency Contacts</h3>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Primary Notification List</p>
+                <h3 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-rose-500" /> Emergency Location Sharing
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  {locationInfo.sharingStopped
+                    ? 'Location sharing paused by user.'
+                    : locationInfo.lat
+                    ? `${locationInfo.source === 'manual' ? 'Manually Provided' : 'GPS Active'} · ${locationInfo.lat.toFixed(5)}, ${locationInfo.lng.toFixed(5)}${locationInfo.accuracy ? ` (±${locationInfo.accuracy} m)` : ''} · ${locationInfo.capturedAt ? new Date(locationInfo.capturedAt).toLocaleTimeString() : ''}`
+                    : 'GPS location not yet available. Enable GPS or enter your area below.'}
+                </p>
               </div>
-              <button 
-                onClick={() => setShowAddContact(true)}
-                className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-white text-xs font-bold flex items-center gap-1.5 transition-all"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add Contact
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={captureBrowserGps} disabled={locating} className="btn-secondary py-1.5 px-3 text-xs">
+                  <LocateFixed className="w-3.5 h-3.5" /> {locating ? 'Locating...' : 'Refresh GPS'}
+                </button>
+                {locationInfo.lat && !locationInfo.sharingStopped && (
+                  <>
+                    <button type="button" onClick={handleShareLocationNative} className="btn-secondary py-1.5 px-3 text-xs">
+                      <Share2 className="w-3.5 h-3.5" /> Share Link
+                    </button>
+                    <button type="button" onClick={handleStopSharing} className="btn-secondary py-1.5 px-3 text-xs text-amber-600 dark:text-amber-300">
+                      <StopCircle className="w-3.5 h-3.5" /> Stop Sharing
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <form onSubmit={handleManualLocationSearch} className="flex gap-2">
+              <input
+                type="text"
+                value={manualArea}
+                onChange={(e) => setManualArea(e.target.value)}
+                placeholder="GPS denied? Enter city, street, or PIN code (tagged as Manually Provided)..."
+                className="input-field py-2 text-xs flex-1"
+              />
+              <button type="submit" disabled={locating} className="btn-primary py-2 px-3.5 text-xs">
+                Set Location
+              </button>
+            </form>
+
+            {locationInfo.lat && !locationInfo.sharingStopped && (
+              <div className="h-64 rounded-xl overflow-hidden border border-slate-200 dark:border-white/10">
+                <div ref={mapRef} className="w-full h-full z-10" />
+              </div>
+            )}
+
+            {/* Nearest OSM Hospitals */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                Nearby Hospitals (OpenStreetMap)
+              </h4>
+              {hospitalsLoading ? (
+                <p className="text-xs text-slate-500">Searching OpenStreetMap hospitals...</p>
+              ) : hospitalsError ? (
+                <p className="text-xs text-amber-600 dark:text-amber-300">{hospitalsError}</p>
+              ) : hospitals.length === 0 ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {locationInfo.lat ? 'No nearby hospitals returned in OpenStreetMap for this radius.' : 'Grant GPS or set a manual location to find nearby hospitals.'}
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {hospitals.map((h) => (
+                    <div key={h.id || h.name} className="p-3 rounded-xl border border-slate-200 dark:border-white/10 space-y-1.5 text-xs">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="font-bold text-slate-900 dark:text-white line-clamp-1">{h.name}</span>
+                        <span className="text-rose-600 dark:text-rose-400 font-bold flex-shrink-0">{h.distance}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1">{h.address}</p>
+                      <div className="flex gap-2 pt-1">
+                        {h.phone && (
+                          <a href={`tel:${h.phone}`} className="btn-secondary py-1 px-2.5 text-[11px]">
+                            <Phone className="w-3 h-3" /> Call
+                          </a>
+                        )}
+                        {h.directions_url && (
+                          <a href={h.directions_url} target="_blank" rel="noopener noreferrer" className="btn-secondary py-1 px-2.5 text-[11px]">
+                            <Navigation className="w-3 h-3" /> Directions
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Emergency Event History */}
+          <div className="glass-card p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
+                <Clock className="w-4 h-4 text-primary-500" /> Emergency Event History
+              </h3>
+              <button type="button" onClick={loadEmergencyState} className="text-xs font-semibold text-primary-600 dark:text-primary-400 flex items-center gap-1">
+                <RefreshCw className="w-3.5 h-3.5" /> Refresh
+              </button>
+            </div>
+            {loading ? (
+              <p className="text-xs text-slate-500">Loading emergency history...</p>
+            ) : history.length === 0 ? (
+              <p className="text-xs text-slate-500 dark:text-slate-400">No SOS activations recorded for your account.</p>
+            ) : (
+              <div className="divide-y divide-slate-200/70 dark:divide-white/10">
+                {history.slice(0, 10).map((ev) => (
+                  <div key={ev.id} className="py-3 space-y-1.5 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-bold text-slate-900 dark:text-white">{ev.date}</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                          ev.status === 'active'
+                            ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                            : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                        }`}>
+                          {ev.status}
+                        </span>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">Source: {ev.location_source}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {ev.maps_url && (
+                          <a href={ev.maps_url} target="_blank" rel="noopener noreferrer" className="text-primary-600 dark:text-primary-400 font-semibold hover:underline">
+                            Map Link
+                          </a>
+                        )}
+                        {ev.status === 'active' && (
+                          <button type="button" onClick={() => handleCancelActiveSos(ev.id)} className="text-rose-600 dark:text-rose-400 font-bold hover:underline">
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {ev.delivery_results?.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {ev.delivery_results.map((dr, i) => (
+                          <span key={i} className={`px-2 py-0.5 rounded-full text-[10px] border ${STATUS_BADGE[dr.sms_status] || STATUS_BADGE.Pending}`}>
+                            {dr.name}: {dr.sms_status}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Col: Emergency Contacts Management + Medical Profile Summary */}
+        <div className="space-y-6">
+          <div className="glass-card p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-base text-slate-900 dark:text-white">Emergency Contacts</h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">Persisted per user in MongoDB</p>
+              </div>
+              <button type="button" onClick={openAddContact} className="btn-primary py-1.5 px-3 text-xs">
+                <Plus className="w-3.5 h-3.5" /> Add
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {contacts.map((contact) => (
-                <div 
-                  key={contact.id} 
-                  className="p-3.5 rounded-xl bg-slate-55 hover:bg-slate-60 dark:bg-white/5 dark:hover:bg-white/5 border border-slate-150 dark:border-white/5 flex items-center justify-between transition-all group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-primary-500/10 flex items-center justify-center text-primary-500 font-black text-xs">
-                      {contact.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+            {contacts.length === 0 ? (
+              <div className="p-6 text-center rounded-xl border border-dashed border-slate-300 dark:border-white/15 space-y-2">
+                <Phone className="w-7 h-7 text-slate-400 mx-auto" />
+                <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">No emergency contacts yet</p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Add family or trusted contacts so SOS can alert them immediately.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {contacts.map((ct) => (
+                  <div key={ct.id} className="p-3.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50/70 dark:bg-white/5 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="font-bold text-sm text-slate-900 dark:text-white">{ct.name}</span>
+                          {ct.is_primary && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-600 dark:text-rose-300">
+                              Primary
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          {ct.relation} · Priority #{ct.priority}
+                        </p>
+                        <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-0.5">{ct.phone}</p>
+                        {ct.email && <p className="text-[11px] text-slate-500 dark:text-slate-400">{ct.email}</p>}
+                      </div>
+                      <div className="flex gap-1">
+                        <button onClick={() => openEditContact(ct)} className="p-1.5 rounded-lg text-slate-500 hover:text-primary-600 dark:text-slate-300" title="Edit contact">
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => handleRemoveContact(ct.id)} className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500" title="Delete contact">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-black text-xs text-slate-900 dark:text-white">{contact.name}</p>
-                      <p className="text-[10px] text-slate-400 font-semibold mt-0.5">{contact.relation} · {contact.phone}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <a 
-                      href={`tel:${contact.phone}`}
-                      className="p-2 rounded-lg bg-primary-500/10 text-primary-500 hover:bg-primary-500 hover:text-white transition-all"
-                    >
-                      <Phone className="w-3.5 h-3.5" />
-                    </a>
-                    {contact.id !== 0 && (
-                      <button 
-                        onClick={() => handleDeleteContact(contact.id)}
-                        className="p-2 text-slate-400 hover:text-rose-500 rounded-lg transition-all"
+                    <div className="flex gap-2">
+                      <a href={`tel:${ct.phone}`} className="btn-secondary flex-1 py-1.5 text-xs">
+                        <Phone className="w-3.5 h-3.5" /> Call
+                      </a>
+                      <a
+                        href={`sms:${ct.phone}?body=${encodeURIComponent(
+                          `EMERGENCY ALERT from ${user?.name || 'HealthPoint User'}: Need urgent help.${activeMapsUrl ? ` Location: ${activeMapsUrl}` : ''}`
+                        )}`}
+                        className="btn-secondary flex-1 py-1.5 text-xs"
                       >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Real Leaflet Map */}
-          <div className="glass-card p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <Navigation className="w-4 h-4 text-rose-500" />
-              <span className="text-xs font-black text-slate-900 dark:text-white">Emergency Location Radar (Hospitals)</span>
-            </div>
-            <div className="h-56 rounded-xl border border-slate-200 dark:border-white/5 relative overflow-hidden z-0">
-              <div ref={mapRef} className="w-full h-full" style={{ zIndex: 0 }} />
-            </div>
-          </div>
-
-        </div>
-
-        {/* Right Column (lg:col-span-1) - Clinical Medical ID Card & Nearest Hospitals */}
-        <div className="space-y-6">
-          
-          {/* CLINICAL MEDICAL ID CARD */}
-          <motion.div
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="glass-card p-5 border-2 border-rose-500/20 bg-gradient-to-br from-rose-500/[0.02] to-transparent relative"
-          >
-            <div className="flex justify-between items-center border-b border-rose-500/20 pb-3 mb-4">
-              <div>
-                <h3 className="text-sm font-black text-rose-600 dark:text-rose-400 uppercase tracking-wider">Clinical Medical ID</h3>
-                <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5">Critical Emergency Access</p>
-              </div>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-500 border border-rose-500/20 font-bold">EMERGENCY</span>
-            </div>
-
-            {/* Medical Vitals */}
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 bg-slate-50 dark:bg-white/5 border border-slate-150 dark:border-white/5 rounded-xl">
-                  <span className="text-[9px] text-slate-400 font-bold uppercase block">Blood Type</span>
-                  <strong className="text-base font-black text-rose-500 mt-1 block">{user?.bloodGroup || 'O+'}</strong>
-                </div>
-                <div className="p-3 bg-slate-55 dark:bg-white/5 border border-slate-150 dark:border-white/5 rounded-xl">
-                  <span className="text-[9px] text-slate-400 font-bold uppercase block">Age</span>
-                  <strong className="text-base font-black text-slate-800 dark:text-white mt-1 block">{user?.age || '25'} yrs</strong>
-                </div>
-              </div>
-
-              <div className="p-3 bg-slate-55 dark:bg-white/5 border border-slate-150 dark:border-white/5 rounded-xl">
-                <span className="text-[9px] text-slate-400 font-bold uppercase block">Known Allergies</span>
-                <p className="text-xs font-bold text-slate-800 dark:text-white mt-1 leading-normal">
-                  {user?.allergies || 'Peanut allergy, Penicillin hypersensitivity'}
-                </p>
-              </div>
-
-              <div className="p-3 bg-slate-55 dark:bg-white/5 border border-slate-150 dark:border-white/5 rounded-xl">
-                <span className="text-[9px] text-slate-400 font-bold uppercase block">Medical Conditions</span>
-                <p className="text-xs font-bold text-slate-800 dark:text-white mt-1 leading-normal">
-                  {user?.medicalConditions || 'Asthma (Mild Intermittent), Essential Hypertension'}
-                </p>
-              </div>
-
-              <div className="p-3 bg-slate-55 dark:bg-white/5 border border-slate-150 dark:border-white/5 rounded-xl">
-                <span className="text-[9px] text-slate-400 font-bold uppercase block">Current Active Medicines</span>
-                <p className="text-xs font-bold text-slate-800 dark:text-white mt-1 leading-normal">
-                  Pantocid 40mg (1-0-0), Calpol 650mg (S.O.S)
-                </p>
-              </div>
-            </div>
-
-            {/* GPS Diagnostic Banner */}
-            <div className="mt-4 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
-              <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                GPS Diagnostics:
-              </span>
-              <span>📡 ACTIVE / HIGH PRECISION</span>
-            </div>
-
-            {/* Medical QR Code Placeholder */}
-            <div className="mt-5 pt-4 border-t border-slate-150 dark:border-white/5 flex flex-col items-center text-center">
-              <div className="p-3 bg-white dark:bg-white/95 rounded-2xl shadow-sm border border-slate-200/40">
-                <svg className="w-24 h-24 text-slate-800" viewBox="0 0 100 100" fill="currentColor">
-                  <path d="M0,0 h30 v30 h-30 z M10,10 h10 v10 h-10 z" />
-                  <path d="M70,0 h30 v30 h-30 z M80,10 h10 v10 h-10 z" />
-                  <path d="M0,70 h30 v30 h-30 z M10,80 h10 v10 h-10 z" />
-                  <path d="M35,35 h10 v10 h-10 z M45,45 h10 v10 h-10 z M55,55 h10 v10 h-10 z" />
-                  <path d="M35,10 h15 v5 h-15 z M35,20 h10 v5 h-10 z M55,10 h10 v5 h-10 z" />
-                  <rect x="42" y="42" width="16" height="16" rx="4" fill="#ef4444" />
-                  <rect x="48" y="44" width="4" height="12" fill="white" />
-                  <rect x="44" y="48" width="12" height="4" fill="white" />
-                </svg>
-              </div>
-              <span className="text-[9px] font-bold text-slate-400 uppercase mt-2">Scan for Digital Patient Summary</span>
-            </div>
-
-          </motion.div>
-
-          {/* Nearest Hospitals List */}
-          <div className="glass-card p-5 space-y-4">
-            <div>
-              <h3 className="text-sm font-black text-slate-900 dark:text-white">Nearest Emergency Care</h3>
-              <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">Quick Dial Hospital Desks</p>
-            </div>
-
-            <div className="space-y-3">
-              {hospitals.map((hosp) => (
-                <div 
-                  key={hosp.id} 
-                  className="p-3 rounded-xl bg-slate-55 dark:bg-white/5 border border-slate-150 dark:border-white/5 flex flex-col gap-2.5"
-                >
-                  <div className="min-w-0">
-                    <h4 className="text-xs font-black text-slate-900 dark:text-white truncate">{hosp.name}</h4>
-                    <div className="flex items-center gap-1.5 text-[9px] text-slate-400 font-bold uppercase mt-1">
-                      <span>{hosp.distance}</span>
-                      <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-700" />
-                      <span>{hosp.type}</span>
+                        <MessageSquare className="w-3.5 h-3.5" /> SMS
+                      </a>
                     </div>
                   </div>
-                  
-                  <div className="flex gap-2 pt-1 border-t border-slate-100 dark:border-white/5">
-                    <a 
-                      href={`tel:${hosp.phone}`}
-                      className="flex-1 py-1.5 rounded-lg text-[9px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500 hover:text-white border border-emerald-500/20 transition-all flex items-center justify-center gap-1"
-                    >
-                      <Phone className="w-3 h-3" />
-                      Call Desk
-                    </a>
-                    <a 
-                      href={`tel:${hosp.ambulancePhone || '108'}`}
-                      className="flex-1 py-1.5 rounded-lg text-[9px] font-bold bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500 hover:text-white border border-rose-500/20 transition-all flex items-center justify-center gap-1"
-                    >
-                      <AlertTriangle className="w-3 h-3" />
-                      Ambulance
-                    </a>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Clinical Emergency Card */}
+          <div className="glass-card p-5 space-y-3">
+            <h3 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+              <Heart className="w-4 h-4 text-rose-500" /> Medical Responder Summary
+            </h3>
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-500 dark:text-slate-400">Patient Name</span>
+                <strong className="text-slate-900 dark:text-white">{user?.name || 'Not set'}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 dark:text-slate-400">Blood Group</span>
+                <strong className="text-rose-600 dark:text-rose-400">{user?.bloodGroup || 'Not recorded'}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 dark:text-slate-400">Allergies</span>
+                <strong className="text-slate-900 dark:text-white">{user?.allergies || 'None reported'}</strong>
+              </div>
+              {uploadedPrescription?.analysis?.medicines?.length > 0 && (
+                <div className="pt-2 border-t border-slate-200/70 dark:border-white/10">
+                  <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">Active Prescription Medicines</span>
+                  <div className="flex flex-wrap gap-1">
+                    {uploadedPrescription.analysis.medicines.slice(0, 6).map((m, idx) => (
+                      <span key={idx} className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-white/10 text-[11px] text-slate-700 dark:text-slate-200">
+                        {m.name}
+                      </span>
+                    ))}
                   </div>
-                </div>
-              ))}
-              {hospitals.length === 0 && (
-                <div className="text-center py-4 text-slate-400 text-xs font-semibold">
-                  Searching emergency care...
                 </div>
               )}
             </div>
           </div>
-
         </div>
-
       </div>
 
-      {/* Add Contact Modal */}
-      <AnimatePresence>
-        {showAddContact && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div 
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowAddContact(false)}
-            />
-            <motion.div 
-              className="relative w-full max-w-md bg-white dark:bg-dark-200 border border-slate-200 dark:border-white/10 rounded-2xl shadow-xl p-6 overflow-hidden"
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-            >
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-white/5 mb-4">
-                <h3 className="text-sm font-black text-slate-900 dark:text-white">Add Emergency Contact</h3>
-                <button 
-                  onClick={() => setShowAddContact(false)}
-                  className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 dark:text-slate-355 transition-all"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+      {/* Explicit SOS Confirmation Modal */}
+      {confirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/75 backdrop-blur-sm">
+          <div className="glass-card w-full max-w-md p-6 space-y-4 border-2 border-rose-500/40">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-rose-500/15 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+                <ShieldAlert className="w-6 h-6" />
               </div>
+              <div>
+                <h3 className="font-black text-base text-slate-900 dark:text-white">Confirm Emergency SOS</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Preventing accidental activation — review details before sending.
+                </p>
+              </div>
+            </div>
 
-              <form onSubmit={handleAddContact} className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Full Name</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. John Doe"
-                    value={newContactName}
-                    onChange={(e) => setNewContactName(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-white/5 text-xs outline-none border border-slate-200 dark:border-white/10 rounded-xl focus:ring-1 focus:ring-primary-500 dark:text-white"
-                  />
-                </div>
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/5 text-xs space-y-1 text-slate-700 dark:text-slate-200">
+              <div>
+                <strong>Location:</strong>{' '}
+                {locationInfo.lat ? `${locationInfo.lat.toFixed(5)}, ${locationInfo.lng.toFixed(5)} (${locationInfo.source})` : 'Will request GPS on confirm (or mark unavailable)'}
+              </div>
+              <div>
+                <strong>Contacts to alert:</strong> {contacts.length} configured contact(s)
+              </div>
+            </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Relationship</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Spouse"
-                      value={newContactRelation}
-                      onChange={(e) => setNewContactRelation(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-white/5 text-xs outline-none border border-slate-200 dark:border-white/10 rounded-xl focus:ring-1 focus:ring-primary-500 dark:text-white"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Phone Number</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. +91 99999 88888"
-                      value={newContactPhone}
-                      onChange={(e) => setNewContactPhone(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-white/5 text-xs outline-none border border-slate-200 dark:border-white/10 rounded-xl focus:ring-1 focus:ring-primary-500 dark:text-white"
-                    />
-                  </div>
-                </div>
+            <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200">
+              <input
+                type="checkbox"
+                checked={sendEmailFallback}
+                onChange={(e) => setSendEmailFallback(e.target.checked)}
+              />
+              Also send email fallback to contacts with email addresses
+            </label>
 
-                <div className="pt-4 border-t border-slate-100 dark:border-white/5 flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowAddContact(false)}
-                    className="flex-1 py-2 rounded-xl border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10 text-xs font-bold text-slate-550 transition-all"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-2 rounded-xl bg-gradient-to-r from-primary-500 to-accent-500 text-white text-xs font-bold hover:opacity-95 transition-all"
-                  >
-                    Save Contact
-                  </button>
-                </div>
-              </form>
-            </motion.div>
+            <input
+              type="text"
+              value={sosNotes}
+              onChange={(e) => setSosNotes(e.target.value)}
+              placeholder="Optional situation note (e.g. Chest tightness / Accident)..."
+              className="input-field text-xs"
+            />
+
+            <div className="flex gap-2.5 pt-2">
+              <button type="button" onClick={() => setConfirmOpen(false)} className="btn-secondary flex-1 py-2.5 text-xs">
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={sosSubmitting}
+                onClick={handleConfirmSos}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center justify-center gap-1.5"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                {sosSubmitting ? 'Activating SOS...' : 'Confirm & Activate SOS'}
+              </button>
+            </div>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      )}
+
+      {/* Add / Edit Contact Modal */}
+      {contactModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm">
+          <div className="glass-card w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                {editingContactId ? 'Edit Emergency Contact' : 'Add Emergency Contact'}
+              </h3>
+              <button onClick={() => setContactModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {contactError && (
+              <div className="p-2.5 rounded-lg bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-500/30 text-xs text-rose-700 dark:text-rose-300">
+                {contactError}
+              </div>
+            )}
+            <form onSubmit={handleSaveContact} className="space-y-3">
+              <input type="text" required value={cName} onChange={(e) => setCName(e.target.value)} placeholder="Contact Name" className="input-field text-xs" />
+              <div className="grid grid-cols-2 gap-2.5">
+                <input type="text" required value={cRelation} onChange={(e) => setCRelation(e.target.value)} placeholder="Relationship (e.g. Parent)" className="input-field text-xs" />
+                <input type="number" min="1" max="20" value={cPriority} onChange={(e) => setCPriority(e.target.value)} placeholder="Priority (1=top)" className="input-field text-xs" />
+              </div>
+              <input type="tel" required value={cPhone} onChange={(e) => setCPhone(e.target.value)} placeholder="Phone (e.g. 9876543210 or +919876543210)" className="input-field text-xs" />
+              <input type="email" value={cEmail} onChange={(e) => setCEmail(e.target.value)} placeholder="Email (optional fallback alert)" className="input-field text-xs" />
+              <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200">
+                <input type="checkbox" checked={cPrimary} onChange={(e) => setCPrimary(e.target.checked)} />
+                Set as Primary Emergency Contact
+              </label>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setContactModalOpen(false)} className="btn-secondary py-2 px-4 text-xs">Cancel</button>
+                <button type="submit" className="btn-primary py-2 px-4 text-xs">Save Contact</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

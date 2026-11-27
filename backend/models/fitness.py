@@ -9,6 +9,14 @@ class WorkoutCreate(BaseModel):
     completed: bool = False
     date: str # YYYY-MM-DD
 
+class WorkoutUpdate(BaseModel):
+    name: Optional[str] = None
+    type: Optional[str] = None
+    duration: Optional[int] = None
+    calories: Optional[int] = None
+    completed: Optional[bool] = None
+    date: Optional[str] = None
+
 class WorkoutResponse(BaseModel):
     id: str
     name: str

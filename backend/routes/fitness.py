@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends
 from typing import List
-from models.fitness import WorkoutCreate, WorkoutResponse, WaterUpdate, MetricUpdate, MealCreate, MealResponse
+from models.fitness import WorkoutCreate, WorkoutUpdate, WorkoutResponse, WaterUpdate, MetricUpdate, MealCreate, MealResponse
 from auth.jwt_handler import get_current_user
 from controllers.fitness_controller import (
     get_workouts_controller,
     create_workout_controller,
+    update_workout_controller,
+    delete_workout_controller,
     get_metrics_controller,
     update_metric_controller,
     update_water_controller,
@@ -22,6 +24,14 @@ async def get_workouts(current_user: dict = Depends(get_current_user)):
 @router.post("/workouts", response_model=WorkoutResponse)
 async def create_workout(workout_data: WorkoutCreate, current_user: dict = Depends(get_current_user)):
     return await create_workout_controller(current_user["email"], workout_data)
+
+@router.put("/workouts/{workout_id}", response_model=WorkoutResponse)
+async def update_workout(workout_id: str, workout_data: WorkoutUpdate, current_user: dict = Depends(get_current_user)):
+    return await update_workout_controller(current_user["email"], workout_id, workout_data)
+
+@router.delete("/workouts/{workout_id}")
+async def delete_workout(workout_id: str, current_user: dict = Depends(get_current_user)):
+    return await delete_workout_controller(current_user["email"], workout_id)
 
 @router.get("/metrics")
 async def get_metrics(current_user: dict = Depends(get_current_user)):

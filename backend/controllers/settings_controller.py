@@ -7,7 +7,6 @@ from typing import Optional
 
 
 class NotificationPreferences(BaseModel):
-    appointmentReminders: bool = True
     medicationAlerts: bool = True
     healthTips: bool = False
     emergencyAlerts: bool = True
@@ -42,7 +41,6 @@ async def get_settings_controller(user_email: str):
     return {
         "user_email": user_email,
         "notifications": {
-            "appointmentReminders": True,
             "medicationAlerts": True,
             "healthTips": False,
             "emergencyAlerts": True,

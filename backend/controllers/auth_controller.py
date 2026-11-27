@@ -341,7 +341,6 @@ async def verify_user_controller(verify_data: VerifyRequest, client_ip: str = "l
             {
                 "user_email": email,
                 "notifications": {
-                    "appointmentReminders": True,
                     "medicationAlerts": True,
                     "healthTips": False,
                     "emergencyAlerts": True,

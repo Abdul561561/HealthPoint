@@ -140,41 +140,6 @@ export const removeAdminMedicine = createAsyncThunk(
   }
 );
 
-// Appointments Thunks
-export const getAdminAppointments = createAsyncThunk(
-  'admin/getAppointments',
-  async (_, { rejectWithValue }) => {
-    try {
-      return await adminApi.fetchAdminAppointments();
-    } catch (err) {
-      return rejectWithValue(err.response?.data?.detail || 'Failed to load appointments list');
-    }
-  }
-);
-
-export const editAdminAppointment = createAsyncThunk(
-  'admin/editAppointment',
-  async ({ apptId, data }, { rejectWithValue }) => {
-    try {
-      return await adminApi.updateAdminAppointment(apptId, data);
-    } catch (err) {
-      return rejectWithValue(err.response?.data?.detail || 'Failed to update appointment details');
-    }
-  }
-);
-
-export const removeAdminAppointment = createAsyncThunk(
-  'admin/removeAppointment',
-  async (apptId, { rejectWithValue }) => {
-    try {
-      await adminApi.deleteAdminAppointment(apptId);
-      return apptId;
-    } catch (err) {
-      return rejectWithValue(err.response?.data?.detail || 'Failed to cancel appointment');
-    }
-  }
-);
-
 // AI Monitoring Thunks
 export const getAdminAIChats = createAsyncThunk(
   'admin/getAIChats',
@@ -215,7 +180,6 @@ const initialState = {
   users: [],
   doctors: [],
   medicines: [],
-  appointments: [],
   aiChats: [],
   reports: [],
   loading: false,
@@ -271,16 +235,6 @@ const adminSlice = createSlice({
       })
       .addCase(removeAdminMedicine.fulfilled, (state, action) => {
         state.medicines = state.medicines.filter(m => m.id !== action.payload);
-      })
-
-      // Appointments
-      .addCase(getAdminAppointments.fulfilled, (state, action) => { state.appointments = action.payload; })
-      .addCase(editAdminAppointment.fulfilled, (state, action) => {
-        const idx = state.appointments.findIndex(a => a.id === action.payload.id);
-        if (idx !== -1) state.appointments[idx] = action.payload;
-      })
-      .addCase(removeAdminAppointment.fulfilled, (state, action) => {
-        state.appointments = state.appointments.filter(a => a.id !== action.payload);
       })
 
       // AI Chats

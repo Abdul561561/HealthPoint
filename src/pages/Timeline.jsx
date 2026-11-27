@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useDispatch, useSelector } from 'react-redux';
 import {
-  Calendar, FileText, Dumbbell, Activity, Heart, Clock,
+  FileText, Dumbbell, Activity, Heart, Clock,
   ArrowRight, Sparkles, Filter, CheckCircle2, ChevronRight
 } from 'lucide-react';
 import { fetchHealthData } from '../redux/slices/healthSlice';
@@ -11,7 +11,7 @@ import Badge from '../components/ui/Badge';
 
 export default function Timeline() {
   const dispatch = useDispatch();
-  const { workouts = [], appointments = [], records = [], metrics, loading } = useSelector((s) => s.health);
+  const { workouts = [], records = [], metrics, loading } = useSelector((s) => s.health);
   const [filterType, setFilterType] = useState('All');
 
   useEffect(() => {
@@ -35,22 +35,6 @@ export default function Timeline() {
         borderColor: 'border-amber-500/30',
         details: `${w.duration} mins active · Burned ${w.calories} kcal`,
         category: w.type,
-      });
-    });
-
-    // Add Appointments
-    appointments.forEach(a => {
-      events.push({
-        id: `appt_${a.id || a._id || Math.random()}`,
-        type: 'appointment',
-        title: `Doctor Visit: ${a.doctor}`,
-        date: new Date(a.date),
-        rawDate: a.date,
-        icon: Calendar,
-        color: 'text-primary-500 bg-primary-500/10 border-primary-500/20',
-        borderColor: 'border-primary-500/30',
-        details: `${a.specialty} consultation scheduled at ${a.time}`,
-        status: a.status,
       });
     });
 
@@ -95,7 +79,6 @@ export default function Timeline() {
   const filterTabs = [
     { label: 'All', type: 'All' },
     { label: 'Workouts', type: 'workout' },
-    { label: 'Appointments', type: 'appointment' },
     { label: 'Records', type: 'record' },
     { label: 'Vitals', type: 'vitals' },
   ];
@@ -178,7 +161,7 @@ export default function Timeline() {
                     </span>
                   </div>
 
-                  <p className="text-xs text-slate-600 dark:text-slate-350 font-semibold mb-2 pl-0.5">
+                  <p className="text-xs text-slate-600 dark:text-slate-300 font-semibold mb-2 pl-0.5">
                     {event.details}
                   </p>
 

@@ -389,6 +389,8 @@ class LLMService:
                     self.max_retries,
                     is_fallback,
                 )
+                has_fallback_remaining = model_idx < len(candidate_models) - 1
+                attempt_timeout = min(self.timeout, 10.0) if has_fallback_remaining else self.timeout
                 try:
                     response = await asyncio.wait_for(
                         client.aio.models.generate_content(
@@ -396,7 +398,7 @@ class LLMService:
                             contents=contents,
                             config=config,
                         ),
-                        timeout=self.timeout,
+                        timeout=attempt_timeout,
                     )
 
                     reply_text = (getattr(response, "text", None) or "").strip()
@@ -447,9 +449,18 @@ class LLMService:
                     self._last_error_category = category
                     last_exception = err_obj
 
-                    # Immediately fail on auth, permissions, quota exhaustion, or invalid request format
-                    if category in ("invalid_api_key", "permission_denied", "quota_exhausted", "invalid_request_format"):
+                    # Immediately fail on auth, permissions, or invalid request format
+                    if category in ("invalid_api_key", "permission_denied", "invalid_request_format"):
                         raise err_obj
+
+                    # Fail fast to Flash fallback model when primary hits quota or 503 overload
+                    if category == "quota_exhausted":
+                        if has_fallback_remaining:
+                            break
+                        raise err_obj
+
+                    if category == "provider_outage" and has_fallback_remaining:
+                        break
 
                     if retryable and attempt < self.max_retries - 1:
                         delay = min((1.5 * (2 ** attempt)) + random.uniform(0.1, 0.4), 5.0)
@@ -465,10 +476,10 @@ class LLMService:
                         model_name,
                         attempt_num,
                         self.max_retries,
-                        self.timeout,
+                        attempt_timeout,
                     )
                     err_obj = LLMServiceException(
-                        f"Gemini request timed out after {self.timeout}s for model {model_name}.",
+                        f"Gemini request timed out after {attempt_timeout}s for model {model_name}.",
                         status_code=408,
                         error_category="timeout",
                         stage="api_call",
@@ -476,6 +487,8 @@ class LLMService:
                     self._last_error = str(err_obj)
                     self._last_error_category = "timeout"
                     last_exception = err_obj
+                    if has_fallback_remaining:
+                        break
                     if attempt < self.max_retries - 1:
                         await asyncio.sleep(1.0 + random.uniform(0.1, 0.4))
                         continue

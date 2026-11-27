@@ -2,11 +2,24 @@ import api from './api';
 
 const AI_REQUEST_CONFIG = { timeout: 60000 };
 
-export const sendChatMessage = async (message, sessionId = null) => {
-  const response = await api.post('/ai/chat', {
+export const sendChatMessage = async (message, sessionId = null, locationContext = {}) => {
+  const payload = {
     message,
-    session_id: sessionId
-  }, AI_REQUEST_CONFIG);
+    session_id: sessionId,
+  };
+  if (locationContext?.lat !== undefined && locationContext?.lat !== null) {
+    payload.lat = locationContext.lat;
+  }
+  if (locationContext?.lng !== undefined && locationContext?.lng !== null) {
+    payload.lng = locationContext.lng;
+  }
+  if (locationContext?.locationQuery) {
+    payload.location_query = locationContext.locationQuery;
+  }
+  if (locationContext?.locationDenied) {
+    payload.location_denied = true;
+  }
+  const response = await api.post('/ai/chat', payload, AI_REQUEST_CONFIG);
   return response.data;
 };
 
@@ -27,6 +40,11 @@ export const deleteChatSession = async (sessionId) => {
 
 export const fetchAiHealth = async () => {
   const response = await api.get('/ai/health');
+  return response.data;
+};
+
+export const fetchAiHealthContext = async () => {
+  const response = await api.get('/ai/context');
   return response.data;
 };
 

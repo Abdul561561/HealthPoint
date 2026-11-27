@@ -140,7 +140,7 @@ export default function Profile() {
               </div>
             </div>
 
-            <div className="flex gap-2.5 mt-5 pt-5 border-t border-slate-150 dark:border-white/5 w-full justify-center">
+            <div className="flex gap-2.5 mt-5 pt-5 border-t border-slate-200 dark:border-white/5 w-full justify-center">
               <div className="text-center px-4 py-2 bg-slate-50 dark:bg-white/5 rounded-xl flex-1 border border-slate-100 dark:border-white/5">
                 <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Age</span>
                 <p className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">{user?.age != null ? `${user.age} yrs` : 'Not provided'}</p>
@@ -151,8 +151,8 @@ export default function Profile() {
               </div>
             </div>
 
-            <div className="w-full text-left mt-6 space-y-3.5 text-sm pt-4 border-t border-slate-150 dark:border-white/5">
-              <div className="flex items-center gap-3 text-slate-600 dark:text-slate-350">
+            <div className="w-full text-left mt-6 space-y-3.5 text-sm pt-4 border-t border-slate-200 dark:border-white/5">
+              <div className="flex items-center gap-3 text-slate-600 dark:text-slate-300">
                 <Phone className="w-4 h-4 text-slate-400 flex-shrink-0" />
                 <span>{user?.phone || 'Not provided'}</span>
               </div>
@@ -160,11 +160,11 @@ export default function Profile() {
                 <MapPin className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
                 <span className="leading-relaxed">{user?.address || 'Not provided'}</span>
               </div>
-              <div className="flex items-center gap-3 text-slate-600 dark:text-slate-350">
+              <div className="flex items-center gap-3 text-slate-600 dark:text-slate-300">
                 <Shield className="w-4 h-4 text-slate-400 flex-shrink-0" />
                 <span>{user?.insurance || 'Not provided'}</span>
               </div>
-              <div className="flex items-center gap-3 text-slate-600 dark:text-slate-350">
+              <div className="flex items-center gap-3 text-slate-600 dark:text-slate-300">
                 <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
                 <span>Joined {user?.memberSince || 'Not provided'}</span>
               </div>
@@ -179,22 +179,22 @@ export default function Profile() {
             </h3>
             
             <div className="grid grid-cols-2 gap-3.5">
-              <div className="p-3 bg-slate-50 dark:bg-white/5 border border-slate-150 dark:border-white/5 rounded-xl">
+              <div className="p-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-xl">
                 <span className="text-xs text-slate-400 font-semibold">Height</span>
                 <p className="text-base font-bold text-slate-955 dark:text-white mt-1">{user?.height || 'Not provided'}</p>
               </div>
-              <div className="p-3 bg-slate-50 dark:bg-white/5 border border-slate-150 dark:border-white/5 rounded-xl">
+              <div className="p-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-xl">
                 <span className="text-xs text-slate-400 font-semibold">Weight</span>
                 <p className="text-base font-bold text-slate-955 dark:text-white mt-1">{user?.weight || 'Not provided'}</p>
               </div>
-              <div className="p-3 bg-slate-50 dark:bg-white/5 border border-slate-150 dark:border-white/5 rounded-xl">
+              <div className="p-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-xl">
                 <span className="text-xs text-slate-400 font-semibold">Body Mass Index (BMI)</span>
                 <p className="text-base font-bold text-slate-955 dark:text-white mt-1">{metrics?.bmi?.value ?? 'Not provided'}</p>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-200/70 text-slate-700 dark:bg-white/10 dark:text-slate-300 mt-1 inline-block font-bold">
                   {metrics?.bmi?.value ? metrics.bmi.category : 'No data available'}
                 </span>
               </div>
-              <div className="p-3 bg-slate-50 dark:bg-white/5 border border-slate-150 dark:border-white/5 rounded-xl">
+              <div className="p-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-xl">
                 <span className="text-xs text-slate-400 font-semibold">Oxygen Level</span>
                 <p className="text-base font-bold text-slate-955 dark:text-white mt-1">
                   {metrics?.oxygen?.level ? `${metrics.oxygen.level}%` : 'Not provided'}
@@ -208,7 +208,7 @@ export default function Profile() {
 
           {/* Health Achievements Card (Coming Soon) */}
           <div className="glass-card p-6 space-y-3">
-            <div className="flex justify-between items-center pb-2 border-b border-slate-150 dark:border-white/5">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-200 dark:border-white/5">
               <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <Award className="w-4.5 h-4.5 text-amber-500" />
                 Health Achievements
@@ -233,7 +233,7 @@ export default function Profile() {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-450">Full Name</label>
+                    <label className="text-xs font-semibold text-slate-400">Full Name</label>
                     <input
                       type="text"
                       required
@@ -243,7 +243,7 @@ export default function Profile() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-450">Email Address</label>
+                    <label className="text-xs font-semibold text-slate-400">Email Address</label>
                     <input
                       type="email"
                       required
@@ -327,7 +327,7 @@ export default function Profile() {
                   <button
                     type="button"
                     onClick={() => setIsEditing(false)}
-                    className="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10 text-sm font-semibold text-slate-600 dark:text-slate-350 transition-all"
+                    className="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10 text-sm font-semibold text-slate-600 dark:text-slate-300 transition-all"
                   >
                     Cancel
                   </button>
@@ -355,7 +355,7 @@ export default function Profile() {
                   </div>
                 ))}
                 
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-150 dark:border-white/5 flex items-start gap-3 mt-4">
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 flex items-start gap-3 mt-4">
                   <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center flex-shrink-0">
                     <Award className="w-4.5 h-4.5" />
                   </div>

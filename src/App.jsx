@@ -1,4 +1,3 @@
-import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 
@@ -18,6 +17,8 @@ import HealthRecords from './pages/HealthRecords';
 import Fitness from './pages/Fitness';
 import Insurance from './pages/Insurance';
 import Nutrition from './pages/Nutrition';
+import Notifications from './pages/Notifications';
+import Vitals from './pages/Vitals';
 import Emergency from './pages/Emergency';
 import Settings from './pages/Settings';
 import Profile from './pages/Profile';
@@ -68,6 +69,8 @@ export default function App() {
           <Route path="/fitness" element={<Fitness />} />
           <Route path="/insurance" element={<Insurance />} />
           <Route path="/nutrition" element={<Nutrition />} />
+          <Route path="/vitals" element={<Vitals />} />
+          <Route path="/notifications" element={<Notifications />} />
           <Route path="/emergency" element={<Emergency />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/profile" element={<Profile />} />

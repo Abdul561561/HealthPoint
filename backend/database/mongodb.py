@@ -41,7 +41,7 @@ async def connect_to_mongo():
     try:
         # Try with certifi first (proper TLS verification)
         import certifi
-        client = AsyncIOMotorClient(MONGODB_URI, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=5000)
+        client = AsyncIOMotorClient(MONGODB_URI, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=15000)
         db = client[DB_NAME]
         await client.admin.command('ping')
         print("Successfully connected to MongoDB (certifi TLS).")
@@ -49,7 +49,7 @@ async def connect_to_mongo():
         print(f"certifi TLS attempt failed. Trying tlsAllowInvalidCertificates fallback...")
         try:
             # Fallback: allow any certificate (confirmed working with Atlas on this cluster)
-            client = AsyncIOMotorClient(MONGODB_URI, tlsAllowInvalidCertificates=True, serverSelectionTimeoutMS=5000)
+            client = AsyncIOMotorClient(MONGODB_URI, tlsAllowInvalidCertificates=True, serverSelectionTimeoutMS=15000)
             db = client[DB_NAME]
             await client.admin.command('ping')
             print("Successfully connected to MongoDB (tlsAllowInvalidCertificates).")
@@ -78,12 +78,24 @@ async def create_indexes():
         collections_to_index = [
             'users', 'metrics', 'appointments', 'records',
             'workouts', 'meals', 'notifications', 'settings',
-            'claims', 'savedPlans', 'aiChatHistory'
+            'claims', 'savedPlans', 'aiChatHistory',
+            'customFoods', 'nutritionGoals', 'reminders',
+            'vitalReadings', 'platformConnections',
+            'emergencyContacts', 'emergencies', 'emergencyAuditLogs',
         ]
         for col in collections_to_index:
             await db[col].create_index('user_email')
-        # Special compound index for notifications
+        # Special compound indexes for notifications, meals, reminders, vitals, emergency, and records
         await db['notifications'].create_index([('user_email', 1), ('read', 1)])
+        await db['notifications'].create_index([('user_email', 1), ('created_at', -1)])
+        await db['meals'].create_index([('user_email', 1), ('date', -1)])
+        await db['reminders'].create_index([('user_email', 1), ('enabled', 1)])
+        await db['vitalReadings'].create_index([('user_email', 1), ('recorded_at', -1)])
+        await db['platformConnections'].create_index([('user_email', 1), ('platform', 1)])
+        await db['emergencyContacts'].create_index([('user_email', 1), ('priority', 1)])
+        await db['emergencies'].create_index([('user_email', 1), ('created_at', -1)])
+        await db['emergencies'].create_index([('user_email', 1), ('status', 1)])
+        await db['emergencyAuditLogs'].create_index([('user_email', 1), ('timestamp', -1)])
         await db['appointments'].create_index([('user_email', 1), ('date', -1)])
         await db['records'].create_index([('user_email', 1), ('date', -1)])
         print("MongoDB indexes created/verified.")
@@ -109,7 +121,7 @@ def get_database():
         try:
             if client.get_io_loop() != loop:
                 import certifi
-                client = AsyncIOMotorClient(MONGODB_URI, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=5000)
+                client = AsyncIOMotorClient(MONGODB_URI, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=15000)
                 db = client[DB_NAME]
         except Exception:
             pass

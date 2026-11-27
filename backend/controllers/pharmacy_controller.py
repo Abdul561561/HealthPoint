@@ -276,50 +276,31 @@ async def fetch_order_history(user_email: str):
 
 async def list_nearby_stores(lat: float = None, lng: float = None):
     if lat is None or lng is None:
-        lat = 12.9716
-        lng = 77.5946
-
+        return []
+    from services.osm_service import search_nearby_osm_facilities
+    res = await search_nearby_osm_facilities(
+        lat=lat,
+        lng=lng,
+        specialty="Pharmacy",
+        radius=5000,
+        facility_mode="pharmacy",
+        limit=15,
+    )
     stores = []
-    try:
-        overpass_url = "https://overpass-api.de/api/interpreter"
-        overpass_query = f"""
-        [out:json][timeout:10];
-        node(around:5000,{lat},{lng})[amenity=pharmacy];
-        out body 10;
-        """
-        async with httpx.AsyncClient(timeout=6.0) as client:
-            res = await client.post(overpass_url, data={"data": overpass_query})
-            if res.status_code == 200:
-                elements = res.json().get("elements", [])
-                for idx, node in enumerate(elements):
-                    tags = node.get("tags", {})
-                    name = tags.get("name", "Local Pharmacy Store")
-                    street = tags.get("addr:street", "Nearby Road")
-                    city = tags.get("addr:city", "Bengaluru")
-                    phone = tags.get("phone", "+91 80 " + str(random.randint(20000000, 99999999)))
-                    hours = tags.get("opening_hours", "9:00 AM – 9:00 PM")
-                    n_lat = node.get("lat")
-                    n_lng = node.get("lon")
-                    
-                    stores.append({
-                        "name": name,
-                        "address": f"{street}, {city}",
-                        "distance": f"{round(random.uniform(0.2, 4.5), 1)} km",
-                        "phone": phone,
-                        "hours": hours,
-                        "latitude": n_lat,
-                        "longitude": n_lng
-                    })
-    except Exception as e:
-        print(f"Pharmacy Overpass error: {e}")
-        
-    if not stores:
-        stores = [
-            {"name": "HealthPoint Central Pharmacy", "address": "MG Road, Bengaluru, Karnataka 560001", "distance": "0.3 km", "phone": "+91 80 4567 8901", "hours": "Open 24 Hours", "latitude": 12.9733, "longitude": 77.6085},
-            {"name": "City Care Drugs & Pharmacy", "address": "Indiranagar 100 Feet Rd, Bengaluru, Karnataka 560038", "distance": "0.8 km", "phone": "+91 80 7890 1234", "hours": "8:00 AM – 10:00 PM", "latitude": 12.9719, "longitude": 77.6412},
-            {"name": "Wellbeing Rx Center", "address": "Koramangala 4th Block, Bengaluru, Karnataka 560034", "distance": "1.5 km", "phone": "+91 80 8901 2345", "hours": "9:00 AM – 9:00 PM", "latitude": 12.9343, "longitude": 77.6190},
-            {"name": "Apex Community Pharmacy", "address": "Jayanagar 4th Block, Bengaluru, Karnataka 560011", "distance": "2.1 km", "phone": "+91 80 9012 3456", "hours": "9:00 AM – 8:00 PM", "latitude": 12.9292, "longitude": 77.5824}
-        ]
+    for item in res.get("results") or []:
+        stores.append({
+            "place_id": item["place_id"],
+            "name": item["name"],
+            "address": item["address"],
+            "distance": f"{item['distance_km']} km",
+            "distance_km": item["distance_km"],
+            "phone": item.get("phone", ""),
+            "hours": item["opening_hours"][0] if item.get("opening_hours") else "Hours not listed in OpenStreetMap",
+            "latitude": item["latitude"],
+            "longitude": item["longitude"],
+            "maps_url": item["maps_url"],
+            "directions_url": item["directions_url"],
+        })
     return stores
 
 async def get_latest_prescription_controller(user_email: str):

@@ -1,4 +1,3 @@
-import React from 'react';
 import { Doughnut } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import { useTheme } from '../../hooks/useTheme';
@@ -6,11 +5,12 @@ import { useSelector } from 'react-redux';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
-export default function MacroChart({ height = 180 }) {
+export default function MacroChart({ height = 180, meals: mealsProp = null }) {
   const { isDark } = useTheme();
   
-  // Calculate macros dynamically if meals are in Redux store
-  const { meals } = useSelector((state) => state.health) || { meals: [] };
+  // Calculate macros dynamically from selected date meals or Redux store
+  const { meals: storeMeals } = useSelector((state) => state.health) || { meals: [] };
+  const meals = mealsProp !== null ? mealsProp : storeMeals;
 
   let totalP = 0, totalC = 0, totalF = 0, totalFb = 0;
   if (meals && meals.length > 0) {

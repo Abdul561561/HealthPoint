@@ -64,22 +64,6 @@ export const deleteAdminMedicine = async (medId) => {
   return response.data;
 };
 
-// Appointments Control
-export const fetchAdminAppointments = async () => {
-  const response = await api.get('/admin/appointments');
-  return response.data;
-};
-
-export const updateAdminAppointment = async (apptId, data) => {
-  const response = await api.put(`/admin/appointments/${apptId}`, data);
-  return response.data;
-};
-
-export const deleteAdminAppointment = async (apptId) => {
-  const response = await api.delete(`/admin/appointments/${apptId}`);
-  return response.data;
-};
-
 // AI Logs Monitor
 export const fetchAdminAIChats = async () => {
   const response = await api.get('/admin/ai-monitoring');

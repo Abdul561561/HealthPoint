@@ -8,8 +8,7 @@ from database.mongodb import get_database
 from auth.jwt_handler import hash_password, verify_password, create_access_token
 from models.user import UserRegister, UserLogin, VerifyRequest
 from models.pharmacy import OrderCreate, CartItemSchema
-from models.appointment import AppointmentCreate
-from models.fitness import WorkoutCreate, MealCreate, MetricUpdate
+from models.fitness import WorkoutCreate, WorkoutUpdate, MealCreate, MetricUpdate
 from models.insurance import ClaimCreate, UploadedDocSchema
 from models.emergency import SOSCreate, EmergencyContactModel
 from models.record import RecordCreate
@@ -31,14 +30,11 @@ from controllers.pharmacy_controller import (
     fetch_order_history
 )
 from controllers.doctor_controller import get_doctors_controller
-from controllers.appointment_controller import (
-    create_appointment_controller,
-    get_appointments_controller,
-    cancel_appointment_controller
-)
 from controllers.fitness_controller import (
     create_workout_controller,
     get_workouts_controller,
+    update_workout_controller,
+    delete_workout_controller,
     create_meal_controller,
     get_meals_controller,
     delete_meal_controller,
@@ -159,9 +155,6 @@ async def test_30_dashboard_data_aggregation():
     records = await get_records_controller(TEST_USER_EMAIL)
     assert isinstance(records, list)
 
-    appointments = await get_appointments_controller(TEST_USER_EMAIL)
-    assert isinstance(appointments, list)
-
     workouts = await get_workouts_controller(TEST_USER_EMAIL)
     assert isinstance(workouts, list)
 
@@ -247,38 +240,39 @@ async def test_33_doctor_discovery():
     assert "rating" in doc
     assert "experience" in doc
 
-# 34. Appointment booking and cancellation test
-async def test_34_appointment_booking_and_cancellation():
+# 34. Workout update, completion persistence, and deletion test
+async def test_34_workout_update_and_delete_persistence():
     db = get_database()
     if db is None:
         pytest.skip("Database connection not available")
 
-    doctors = await get_doctors_controller()
-    doc = doctors[0]
-
-    appt_data = AppointmentCreate(
-        doctorId=str(doc.get("id") or doc.get("_id")),
-        doctorName=doc.get("name", "Dr. Mitchell"),
-        specialty=doc.get("specialty", "General Medicine"),
-        date="2026-12-05",
-        time="10:30 AM",
-        type="In-Person",
-        hospital=doc.get("hospital", "City General Hospital")
+    created = await create_workout_controller(
+        TEST_USER_EMAIL,
+        WorkoutCreate(
+            name="Evening Walk",
+            type="Cardio",
+            duration=30,
+            calories=180,
+            completed=False,
+            date="2026-11-27",
+        ),
     )
-    booked = await create_appointment_controller(TEST_USER_EMAIL, appt_data)
-    assert booked is not None
-    assert booked.get("status").lower() in ("confirmed", "scheduled", "pending")
-    appt_id = str(booked.get("id") or booked.get("_id"))
+    workout_id = str(created["id"])
+    assert created["completed"] is False
 
-    # Cancel Appointment
-    cancel_res = await cancel_appointment_controller(TEST_USER_EMAIL, appt_id)
-    assert cancel_res is not None
+    updated = await update_workout_controller(
+        TEST_USER_EMAIL,
+        workout_id,
+        WorkoutUpdate(completed=True, calories=210),
+    )
+    assert updated["completed"] is True
+    assert updated["calories"] == 210
 
-    # Verify status is Cancelled
-    appts = await get_appointments_controller(TEST_USER_EMAIL)
-    target = next((a for a in appts if str(a.get("id") or a.get("_id")) == appt_id), None)
-    assert target is not None
-    assert target.get("status").lower() == "cancelled"
+    metrics = await get_metrics_controller(TEST_USER_EMAIL)
+    assert (metrics.get("calories") or {}).get("burned", 0) >= 210
+
+    del_res = await delete_workout_controller(TEST_USER_EMAIL, workout_id)
+    assert del_res["success"] is True
 
 # 35. Fitness goal and workout tracking test
 async def test_35_fitness_goal_and_workout_tracking():
@@ -392,9 +386,8 @@ async def test_38_health_analytics_metrics_calculation():
 
 # 39. Patient timeline event generation test
 async def test_39_patient_timeline_generation():
-    # Synthesize events from workouts, appointments, and records
+    # Synthesize events from workouts and records
     workouts = await get_workouts_controller(TEST_USER_EMAIL)
-    appointments = await get_appointments_controller(TEST_USER_EMAIL)
     records = await get_records_controller(TEST_USER_EMAIL)
 
     events = []
@@ -404,13 +397,6 @@ async def test_39_patient_timeline_generation():
             "type": "workout",
             "title": f"Workout: {w.get('name')}",
             "date": w.get("date", "2026-11-24")
-        })
-    for a in appointments:
-        events.append({
-            "id": f"appt_{a.get('id') or a.get('_id')}",
-            "type": "appointment",
-            "title": f"Doctor Visit: {a.get('doctorName')}",
-            "date": a.get("date", "2026-11-24")
         })
     for r in records:
         events.append({

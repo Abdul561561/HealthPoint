@@ -43,8 +43,8 @@
   /* Glass Card */
   .glass-card {
     @apply backdrop-blur-xl border rounded-2xl;
-    @apply bg-white/80 border-white/60 shadow-card;
-    @apply dark:bg-white/5 dark:border-white/10 dark:shadow-glass;
+    @apply bg-white/85 border-slate-200/80 shadow-card;
+    @apply dark:bg-dark-200/80 dark:border-white/15 dark:shadow-glass;
     transition: all 0.3s ease;
   }
 
@@ -131,7 +131,7 @@
   .input-field {
     @apply w-full px-4 py-3 rounded-xl text-sm font-medium outline-none;
     @apply bg-slate-100 border border-slate-200 text-slate-900 placeholder-slate-400;
-    @apply dark:bg-white/10 dark:border-white/10 dark:text-white dark:placeholder-slate-500;
+    @apply dark:bg-dark-100/90 dark:border-white/15 dark:text-slate-100 dark:placeholder-slate-400;
     @apply focus:ring-2 focus:ring-primary-500 focus:border-transparent;
     @apply transition-all duration-200;
   }
@@ -235,13 +235,49 @@
   right: 4px !important;
 }
 
-/* Color scheme fixes for HTML5 date/time inputs in dark mode */
-input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: invert(1) brightness(0.9);
+/* Color scheme and native control contrast fixes for Dark Mode */
+.dark select,
+.dark select option {
+  background-color: #161b27;
+  color: #f1f5f9;
+}
+
+.dark input,
+.dark textarea,
+.dark select {
+  color-scheme: dark;
+}
+
+.dark input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(0.95);
   cursor: pointer;
 }
-input[type="date"] {
-  color-scheme: dark;
+
+/* Leaflet popup readability & standard OSM tiles styling in dark mode */
+.dark .leaflet-tile-pane {
+  filter: brightness(0.86) invert(1) contrast(1.04) hue-rotate(200deg) saturate(0.48);
+}
+.dark .leaflet-popup-content-wrapper,
+.dark .leaflet-popup-tip {
+  background-color: #161b27 !important;
+  color: #f1f5f9 !important;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.dark .leaflet-popup-content-wrapper h1,
+.dark .leaflet-popup-content-wrapper h2,
+.dark .leaflet-popup-content-wrapper h3,
+.dark .leaflet-popup-content-wrapper h4,
+.dark .leaflet-popup-content-wrapper p,
+.dark .leaflet-popup-content-wrapper strong {
+  color: #f1f5f9 !important;
+}
+
+/* Mobile PWA safe-area utilities */
+.safe-pt {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.safe-pb {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 

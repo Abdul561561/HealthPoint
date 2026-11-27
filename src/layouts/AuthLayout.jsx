@@ -56,7 +56,7 @@ export default function AuthLayout() {
                   </span>
                 </h2>
                 <p className="text-slate-400 text-lg max-w-md leading-relaxed">
-                  Sign in to monitor your vitals, view AI risk predictions, book appointments, and check pharmacy deliveries.
+                  Sign in to monitor your vitals, view AI risk predictions, discover nearby doctors, and check pharmacy deliveries.
                 </p>
 
                 {/* Animated Health Monitor Card */}
@@ -121,7 +121,7 @@ export default function AuthLayout() {
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.1 * i }}
-                      className="flex items-center gap-3 text-slate-350 text-sm font-medium"
+                      className="flex items-center gap-3 text-slate-300 text-sm font-medium"
                     >
                       <CheckCircle className="w-5 h-5 text-emerald-400 flex-shrink-0" />
                       <span>{text}</span>
@@ -134,7 +134,7 @@ export default function AuthLayout() {
         </div>
 
         {/* Footer */}
-        <p className="relative z-10 text-slate-650 text-xs font-semibold">
+        <p className="relative z-10 text-slate-600 text-xs font-semibold">
           © 2026 HealthPoint Technologies Pvt. Ltd. All rights reserved.
         </p>
       </div>

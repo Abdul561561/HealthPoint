@@ -59,7 +59,7 @@ const renderParagraphOrList = (text) => {
     // Markdown Headers
     if (trimmed.startsWith('###')) {
       return (
-        <h4 key={idx} className="text-xs font-extrabold text-primary-500 dark:text-primary-450 mt-4 mb-2 uppercase tracking-wider flex items-center gap-1.5">
+        <h4 key={idx} className="text-xs font-extrabold text-primary-500 dark:text-primary-400 mt-4 mb-2 uppercase tracking-wider flex items-center gap-1.5">
           <Sparkles className="w-3.5 h-3.5 text-primary-500" />
           {parseBold(trimmed.substring(3).trim())}
         </h4>
@@ -100,7 +100,7 @@ const renderParagraphOrList = (text) => {
     }
 
     return (
-      <p key={idx} className="text-xs text-slate-700 dark:text-slate-350 leading-relaxed mb-1.5">
+      <p key={idx} className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed mb-1.5">
         {parseBold(trimmed)}
       </p>
     );
@@ -127,7 +127,7 @@ const parseMarkdownTable = (text) => {
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-150 dark:divide-white/5 bg-white/40 dark:bg-dark-200/40">
+        <tbody className="divide-y divide-slate-200 dark:divide-white/5 bg-white/40 dark:bg-dark-200/40">
           {rows.map((row, rowIdx) => (
             <tr key={rowIdx} className="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
               {row.map((cell, cellIdx) => (
@@ -203,7 +203,7 @@ export default function StructuredResponse({ text, type = 'chat' }) {
   // Helper to trigger navigation based on action buttons clicked
   const handleActionClick = (actionText) => {
     const action = actionText.toLowerCase();
-    if (action.includes('doctor') || action.includes('appointment')) {
+    if (action.includes('doctor')) {
       navigate('/doctors');
     } else if (action.includes('pharmacy') || action.includes('medicine')) {
       navigate('/pharmacy');
@@ -244,7 +244,7 @@ export default function StructuredResponse({ text, type = 'chat' }) {
                   <div className="flex items-center justify-between px-3 py-1 bg-slate-900 border-b border-slate-800 text-[10px] font-mono text-slate-400">
                     <span className="uppercase">{lang}</span>
                   </div>
-                  <pre className="p-3 text-xs font-mono text-emerald-400 dark:text-emerald-350 overflow-x-auto whitespace-pre leading-relaxed">
+                  <pre className="p-3 text-xs font-mono text-emerald-400 dark:text-emerald-300 overflow-x-auto whitespace-pre leading-relaxed">
                     <code>{codeBody}</code>
                   </pre>
                 </div>
@@ -297,7 +297,7 @@ export default function StructuredResponse({ text, type = 'chat' }) {
             <Heart className="w-4 h-4 text-rose-500 animate-pulse" />
             🩺 Health Summary
           </h4>
-          <p className="text-xs text-slate-700 dark:text-slate-350 leading-relaxed font-semibold pl-1.5">
+          <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-semibold pl-1.5">
             {parseBold(sections.summary.join('\n').trim())}
           </p>
         </motion.div>
@@ -348,7 +348,7 @@ export default function StructuredResponse({ text, type = 'chat' }) {
               <div className="relative w-2 h-14 bg-slate-200 dark:bg-white/10 rounded-full flex-shrink-0 overflow-hidden">
                 <div className={`absolute bottom-0 left-0 right-0 ${riskColor}`} style={{ height: badge === 'High Risk' ? '90%' : badge === 'Needs Attention' ? '65%' : badge === 'Moderate' ? '40%' : '15%' }} />
               </div>
-              <p className="text-xs text-slate-700 dark:text-slate-350 leading-relaxed pl-0.5">
+              <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed pl-0.5">
                 {parseBold(content.replace(/^[🟢🟡🟠🔴]\s*/, '').replace(/Healthy|Moderate|Needs Attention|High Risk/gi, '').replace(/^Show risk level:\s*/i, '').trim())}
               </p>
             </div>
@@ -371,7 +371,7 @@ export default function StructuredResponse({ text, type = 'chat' }) {
             {sections.recommendations.join('\n').split('\n').filter(l => l.trim().startsWith('*') || l.trim().startsWith('-')).map((rec, i) => {
               const cleanRec = rec.replace(/^[\*\-]\s*/, '').trim();
               return (
-                <div key={i} className="flex items-start gap-2.5 p-2 rounded-xl bg-white/50 dark:bg-white/5 border border-slate-150 dark:border-white/5 hover:border-primary-500/30 transition-all duration-200">
+                <div key={i} className="flex items-start gap-2.5 p-2 rounded-xl bg-white/50 dark:bg-white/5 border border-slate-200 dark:border-white/5 hover:border-primary-500/30 transition-all duration-200">
                   <input type="checkbox" className="mt-0.5 rounded border-slate-300 text-primary-600 focus:ring-primary-500 w-4 h-4 cursor-pointer" />
                   <span className="text-xs text-slate-700 dark:text-slate-300 font-semibold">{parseBold(cleanRec)}</span>
                 </div>
@@ -451,7 +451,7 @@ export default function StructuredResponse({ text, type = 'chat' }) {
               <button
                 key={i}
                 onClick={() => handleActionClick(act)}
-                className="flex items-center justify-between p-2.5 rounded-xl bg-white dark:bg-dark-100 border border-slate-250 dark:border-white/5 hover:border-primary-500/50 hover:bg-primary-500/5 dark:hover:bg-primary-500/10 text-slate-800 dark:text-slate-200 font-bold text-xs transition-all text-left"
+                className="flex items-center justify-between p-2.5 rounded-xl bg-white dark:bg-dark-100 border border-slate-200 dark:border-white/5 hover:border-primary-500/50 hover:bg-primary-500/5 dark:hover:bg-primary-500/10 text-slate-800 dark:text-slate-200 font-bold text-xs transition-all text-left"
               >
                 <span className="flex items-center gap-2">
                   <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" />

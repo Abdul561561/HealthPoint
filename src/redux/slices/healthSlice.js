@@ -6,15 +6,13 @@ export const fetchHealthData = createAsyncThunk(
   'health/fetchHealthData',
   async (_, { rejectWithValue }) => {
     try {
-      const [metricsRes, apptsRes, recordsRes, workoutsRes] = await Promise.all([
+      const [metricsRes, recordsRes, workoutsRes] = await Promise.all([
         api.get('/fitness/metrics'),
-        api.get('/appointments'),
         api.get('/records'),
         api.get('/fitness/workouts')
       ]);
       return {
         metrics: metricsRes.data,
-        appointments: apptsRes.data,
         records: recordsRes.data,
         workouts: workoutsRes.data
       };
@@ -25,27 +23,27 @@ export const fetchHealthData = createAsyncThunk(
   }
 );
 
-export const bookAppointment = createAsyncThunk(
-  'health/bookAppointment',
-  async (apptData, { rejectWithValue }) => {
+export const completeFitnessWorkout = createAsyncThunk(
+  'health/completeFitnessWorkout',
+  async ({ workoutId, completed = true }, { rejectWithValue }) => {
     try {
-      const response = await api.post('/appointments', apptData);
+      const response = await api.put(`/fitness/workouts/${workoutId}`, { completed });
       return response.data;
     } catch (err) {
-      const message = err.response?.data?.detail || 'Failed to book appointment';
+      const message = err.response?.data?.detail || 'Failed to update workout status';
       return rejectWithValue(message);
     }
   }
 );
 
-export const cancelAppointment = createAsyncThunk(
-  'health/cancelAppointment',
-  async (apptId, { rejectWithValue }) => {
+export const deleteFitnessWorkout = createAsyncThunk(
+  'health/deleteFitnessWorkout',
+  async (workoutId, { rejectWithValue }) => {
     try {
-      await api.post(`/appointments/${apptId}/cancel`);
-      return apptId;
+      await api.delete(`/fitness/workouts/${workoutId}`);
+      return workoutId;
     } catch (err) {
-      const message = err.response?.data?.detail || 'Failed to cancel appointment';
+      const message = err.response?.data?.detail || 'Failed to delete workout';
       return rejectWithValue(message);
     }
   }
@@ -137,7 +135,6 @@ const initialState = {
     temperature: { value: null, unit: '°F', status: 'not_recorded' },
     history: {},
   },
-  appointments: [],
   records: [],
   workouts: [],
   medications: [],
@@ -163,7 +160,6 @@ const healthSlice = createSlice({
       .addCase(fetchHealthData.fulfilled, (state, action) => {
         state.loading = false;
         state.metrics = action.payload.metrics;
-        state.appointments = action.payload.appointments;
         state.records = action.payload.records;
         state.workouts = action.payload.workouts;
       })
@@ -171,18 +167,18 @@ const healthSlice = createSlice({
         state.loading = false;
         state.error = action.payload;
       })
-      
-      // Book Appointment
-      .addCase(bookAppointment.fulfilled, (state, action) => {
-        state.appointments.unshift(action.payload);
-      })
-      
-      // Cancel Appointment
-      .addCase(cancelAppointment.fulfilled, (state, action) => {
-        const idx = state.appointments.findIndex(a => a.id === action.payload);
+
+      // Complete / Update Workout
+      .addCase(completeFitnessWorkout.fulfilled, (state, action) => {
+        const idx = state.workouts.findIndex(w => w.id === action.payload.id);
         if (idx !== -1) {
-          state.appointments[idx].status = 'cancelled';
+          state.workouts[idx] = action.payload;
         }
+      })
+
+      // Delete Workout
+      .addCase(deleteFitnessWorkout.fulfilled, (state, action) => {
+        state.workouts = state.workouts.filter(w => w.id !== action.payload);
       })
       
       // Upload Record

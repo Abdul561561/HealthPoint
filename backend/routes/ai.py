@@ -7,7 +7,6 @@ from services.voice_service import VoiceServiceState
 from services.ai_tools_service import (
     tool_read_health_metrics,
     tool_list_user_records,
-    tool_summarize_appointments,
     tool_save_diet_plan,
     tool_save_workout_plan,
     tool_find_doctors,
@@ -21,7 +20,8 @@ from controllers.ai_controller import (
     analyze_report_controller,
     generate_diet_controller,
     generate_fitness_controller,
-    explain_medicine_controller
+    explain_medicine_controller,
+    get_health_context_controller,
 )
 
 router = APIRouter(prefix="/ai", tags=["AI Health Services"])
@@ -29,6 +29,10 @@ router = APIRouter(prefix="/ai", tags=["AI Health Services"])
 class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    location_query: Optional[str] = None
+    location_denied: Optional[bool] = False
 
 class ReportRequest(BaseModel):
     title: str
@@ -42,6 +46,8 @@ class DietRequest(BaseModel):
     height: str
     goal: str
     restrictions: Optional[str] = None
+    question: Optional[str] = None
+    date: Optional[str] = None
 
 class FitnessRequest(BaseModel):
     age: int
@@ -64,9 +70,22 @@ async def get_ai_health():
     llm = get_llm_service()
     return await llm.check_health()
 
+@router.get("/context")
+async def get_ai_context(current_user: dict = Depends(get_current_user)):
+    """Returns the authenticated user's live de-identified HealthPoint context summary."""
+    return await get_health_context_controller(current_user["email"])
+
 @router.post("/chat")
 async def chat_ai(req: ChatRequest, current_user: dict = Depends(get_current_user)):
-    return await chat_ai_controller(current_user["email"], req.message, req.session_id)
+    return await chat_ai_controller(
+        current_user["email"],
+        req.message,
+        req.session_id,
+        lat=req.lat,
+        lng=req.lng,
+        location_query=req.location_query,
+        location_denied=bool(req.location_denied),
+    )
 
 @router.get("/chat/history")
 async def get_chat_history(current_user: dict = Depends(get_current_user)):
@@ -86,7 +105,16 @@ async def analyze_report(req: ReportRequest, current_user: dict = Depends(get_cu
 
 @router.post("/diet")
 async def generate_diet(req: DietRequest, current_user: dict = Depends(get_current_user)):
-    return await generate_diet_controller(req.age, req.weight, req.height, req.goal, req.restrictions)
+    return await generate_diet_controller(
+        req.age,
+        req.weight,
+        req.height,
+        req.goal,
+        req.restrictions,
+        user_email=current_user["email"],
+        question=req.question,
+        date_str=req.date,
+    )
 
 @router.post("/fitness")
 async def generate_fitness(req: FitnessRequest, current_user: dict = Depends(get_current_user)):
@@ -108,7 +136,6 @@ async def list_approved_tools():
         "tools": [
             {"name": "read_health_metrics", "description": "Reads current vitals for authenticated user", "auth_required": True},
             {"name": "list_user_records", "description": "Lists authorized medical records", "auth_required": True},
-            {"name": "summarize_appointments", "description": "Summarizes upcoming doctor appointments", "auth_required": True},
             {"name": "save_diet_plan", "description": "Saves generated diet plan to user profile", "auth_required": True},
             {"name": "save_workout_plan", "description": "Saves generated workout routine", "auth_required": True},
             {"name": "find_doctors", "description": "Queries platform verified doctors", "auth_required": False},
@@ -127,8 +154,6 @@ async def execute_approved_tool(req: ToolExecuteRequest, current_user: dict = De
         return await tool_read_health_metrics(email)
     elif name == "list_user_records":
         return await tool_list_user_records(email, limit=params.get("limit", 5))
-    elif name == "summarize_appointments":
-        return await tool_summarize_appointments(email)
     elif name == "save_diet_plan":
         return await tool_save_diet_plan(email, params.get("title", ""), params.get("plan_text", ""))
     elif name == "save_workout_plan":

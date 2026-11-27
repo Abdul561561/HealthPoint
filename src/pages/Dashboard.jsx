@@ -4,9 +4,10 @@ import { Link } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchHealthData, updateHealthMetric } from '../redux/slices/healthSlice';
 import { fetchLatestPrescription } from '../redux/slices/pharmacySlice';
+import { addToast } from '../redux/slices/uiSlice';
 import {
   Heart, Activity, Moon, Flame, Footprints, Droplets,
-  Calendar, FileText, Bot, Pill, AlertTriangle, Dumbbell,
+  FileText, Bot, Pill, AlertTriangle, Dumbbell, MapPin,
   ArrowRight, Clock, TrendingUp, ChevronRight, Check, Award, FlameKindling, Info
 } from 'lucide-react';
 import { useHealthData } from '../hooks/useHealthData';
@@ -20,7 +21,7 @@ import Badge from '../components/ui/Badge';
 import { formatDate, getStatusColor, getInitials } from '../utils/helpers';
 
 const quickActions = [
-  { id: 1, label: 'Book Appointment', icon: Calendar, color: 'indigo', path: '/doctors' },
+  { id: 1, label: 'Find Doctors', icon: MapPin, color: 'indigo', path: '/doctors' },
   { id: 2, label: 'Order Medicine', icon: Pill, color: 'cyan', path: '/pharmacy' },
   { id: 3, label: 'Medical Records', icon: FileText, color: 'violet', path: '/records' },
   { id: 4, label: 'Ask AI', icon: Bot, color: 'rose', path: '/ai-assistant' },
@@ -39,7 +40,7 @@ const item = {
 };
 
 export default function Dashboard() {
-  const { metrics, appointments, records, workouts } = useHealthData();
+  const { metrics, records, workouts } = useHealthData();
   const { user } = useAuth();
   const dispatch = useDispatch();
   const { loading } = useSelector((s) => s.health);
@@ -107,8 +108,10 @@ export default function Dashboard() {
         value: { intake: currentWater + 1 }
       })).unwrap();
       dispatch(fetchHealthData());
+      dispatch(addToast({ type: 'success', message: `Water logged (${currentWater + 1} glasses)` }));
     } catch (err) {
       console.error(err);
+      dispatch(addToast({ type: 'error', message: 'Failed to log water intake.' }));
     }
   };
 
@@ -186,8 +189,10 @@ export default function Dashboard() {
       await Promise.all(updates);
       setIsLogModalOpen(false);
       dispatch(fetchHealthData());
+      dispatch(addToast({ type: 'success', message: 'Vitals updated successfully.' }));
     } catch (err) {
       console.error(err);
+      dispatch(addToast({ type: 'error', message: 'Failed to save vitals. Please try again.' }));
     }
   };
 
@@ -327,7 +332,7 @@ export default function Dashboard() {
     { label: 'Walk 5,000 steps', current: metrics?.steps?.count || 0, target: 5000, done: (metrics?.steps?.count || 0) >= 5000 },
     { label: 'Sleep 8 hours', current: metrics?.sleep?.hours || 0, target: 8, done: (metrics?.sleep?.hours || 0) >= 8 },
     { label: 'Check off medicines', done: Object.keys(checkedPills).length > 0 || (uploadedPrescription?.analysis?.medicines?.length === 0) },
-    { label: 'Today\'s appointments check', done: appointments.length > 0 }
+    { label: 'Log a workout', done: (workouts || []).length > 0 }
   ];
   const completedMissions = missionItems.filter(m => m.done).length;
   const missionProgress = Math.round((completedMissions / missionItems.length) * 100);
@@ -409,14 +414,14 @@ export default function Dashboard() {
             animate={{ opacity: 1, scale: 1 }}
             className="glass-card p-5 border border-primary-500/10"
           >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-150 dark:border-white/5 pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-white/5 pb-3">
               <div>
                 <h3 className="text-sm font-black text-slate-900 dark:text-white">Today's Health Mission</h3>
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Focus Areas & Targets</p>
               </div>
               <div className="flex items-center gap-2.5">
                 <div className="text-right">
-                  <span className="text-[10px] font-bold text-slate-450 block">Overall Completion</span>
+                  <span className="text-[10px] font-bold text-slate-400 block">Overall Completion</span>
                   <span className="text-xs font-black text-primary-500">{missionProgress}%</span>
                 </div>
                 <div className="w-16 h-2 bg-slate-200 dark:bg-white/10 rounded-full overflow-hidden">
@@ -441,7 +446,7 @@ export default function Dashboard() {
                     }`}>
                       {item.done ? <Check className="w-3.5 h-3.5 stroke-[3]" /> : <span className="text-[8px] font-bold">{idx+1}</span>}
                     </div>
-                    <span className={`text-[11px] font-bold truncate ${item.done ? 'text-slate-550 line-through opacity-70' : 'text-slate-700 dark:text-slate-350'}`}>
+                    <span className={`text-[11px] font-bold truncate ${item.done ? 'text-slate-500 line-through opacity-70' : 'text-slate-700 dark:text-slate-300'}`}>
                       {item.label}
                     </span>
                   </div>
@@ -492,7 +497,7 @@ export default function Dashboard() {
               <Activity className="w-6 h-6 text-primary-500" />
             </div>
 
-            <div className="grid grid-cols-3 gap-2.5 mt-5 pt-4 border-t border-slate-150 dark:border-white/5 text-center">
+            <div className="grid grid-cols-3 gap-2.5 mt-5 pt-4 border-t border-slate-200 dark:border-white/5 text-center">
               <div>
                 <span className="text-[9px] font-bold text-slate-400 block uppercase">Weight</span>
                 <strong className="text-sm font-black text-slate-800 dark:text-white mt-1 block">
@@ -543,7 +548,7 @@ export default function Dashboard() {
 
             <div className="grid grid-cols-2 gap-4 py-2 mt-2">
               <div className="flex flex-col gap-1 justify-center">
-                <div className="text-xs font-semibold text-slate-705 dark:text-slate-350">
+                <div className="text-xs font-semibold text-slate-705 dark:text-slate-300">
                   Water: {metrics?.water?.intake || 0}/{metrics?.water?.target || 8} glasses
                 </div>
                 <button
@@ -554,8 +559,8 @@ export default function Dashboard() {
                 </button>
               </div>
 
-              <div className="flex flex-col gap-1 justify-center border-l border-slate-150 dark:border-white/5 pl-4">
-                <div className="text-xs font-semibold text-slate-705 dark:text-slate-350">
+              <div className="flex flex-col gap-1 justify-center border-l border-slate-200 dark:border-white/5 pl-4">
+                <div className="text-xs font-semibold text-slate-705 dark:text-slate-300">
                   Sleep: {metrics?.sleep?.hours || 0} hrs
                 </div>
                 <span className="text-[9px] text-slate-400 font-bold block uppercase tracking-wide">
@@ -591,7 +596,7 @@ export default function Dashboard() {
               <motion.div key={action.id} variants={item} className="hover:scale-[1.04] transition-all">
                 <Link
                   to={action.path}
-                  className="glass-card p-4 flex flex-col items-center gap-2 text-center h-full border border-slate-150 dark:border-white/5"
+                  className="glass-card p-4 flex flex-col items-center gap-2 text-center h-full border border-slate-200 dark:border-white/5"
                 >
                   <div className={`w-11 h-11 rounded-2xl bg-gradient-to-br ${colorClass} flex items-center justify-center shadow-lg`}>
                     <Icon className="w-5 h-5 text-white" />
@@ -611,7 +616,7 @@ export default function Dashboard() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.15 }}
-          className="glass-card p-5 border border-slate-150 dark:border-white/5"
+          className="glass-card p-5 border border-slate-200 dark:border-white/5"
         >
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -631,7 +636,7 @@ export default function Dashboard() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="glass-card p-5 border border-slate-150 dark:border-white/5"
+          className="glass-card p-5 border border-slate-200 dark:border-white/5"
         >
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -651,7 +656,7 @@ export default function Dashboard() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.25 }}
-          className="glass-card p-5 border border-slate-150 dark:border-white/5"
+          className="glass-card p-5 border border-slate-200 dark:border-white/5"
         >
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -668,7 +673,7 @@ export default function Dashboard() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="glass-card p-5 border border-slate-150 dark:border-white/5"
+          className="glass-card p-5 border border-slate-200 dark:border-white/5"
         >
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -684,51 +689,51 @@ export default function Dashboard() {
         </motion.div>
       </div>
 
-      {/* ── BOTTOM ROW: APPOINTMENTS + RECORDS + PILL REMINDERS ──────── */}
+      {/* ── BOTTOM ROW: WORKOUTS + RECORDS + PILL REMINDERS ──────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         
-        {/* COLUMN 1: Upcoming Appointments */}
+        {/* COLUMN 1: Recent Workouts */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.35 }}
-          className="glass-card p-5 flex flex-col justify-between border border-slate-150 dark:border-white/5"
+          className="glass-card p-5 flex flex-col justify-between border border-slate-200 dark:border-white/5"
         >
           <div>
             <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-white/5 pb-2.5">
               <div>
-                <h3 className="text-sm font-black text-slate-900 dark:text-white">Doctor Visits</h3>
-                <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5">Appointments</p>
+                <h3 className="text-sm font-black text-slate-900 dark:text-white">Fitness Activity</h3>
+                <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5">Recent Workouts</p>
               </div>
-              <Link to="/doctors" className="text-[10px] text-primary-500 hover:text-primary-400 font-bold flex items-center gap-0.5">
-                Consult <ChevronRight className="w-3.5 h-3.5" />
+              <Link to="/fitness" className="text-[10px] text-primary-500 hover:text-primary-400 font-bold flex items-center gap-0.5">
+                Track <ChevronRight className="w-3.5 h-3.5" />
               </Link>
             </div>
 
             <div className="space-y-3">
-              {appointments.length === 0 ? (
+              {(workouts || []).length === 0 ? (
                 <div className="text-center py-8 border border-dashed border-slate-200 dark:border-white/10 rounded-2xl">
-                  <p className="text-xs text-slate-500 font-semibold">No appointments scheduled</p>
-                  <Link to="/doctors" className="mt-2 inline-block px-3 py-1.5 bg-primary-500/15 hover:bg-primary-500/25 text-primary-600 dark:text-primary-400 text-[10px] font-bold rounded-lg transition-all border border-primary-500/20">
-                    Book a doctor
+                  <p className="text-xs text-slate-500 font-semibold">No workouts logged yet</p>
+                  <Link to="/fitness" className="mt-2 inline-block px-3 py-1.5 bg-primary-500/15 hover:bg-primary-500/25 text-primary-600 dark:text-primary-400 text-[10px] font-bold rounded-lg transition-all border border-primary-500/20">
+                    Log a workout
                   </Link>
                 </div>
               ) : (
-                appointments.slice(0, 3).map(appt => (
-                  <div key={appt.id} className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-150 dark:border-white/5">
+                workouts.slice(0, 3).map(workout => (
+                  <div key={workout.id} className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5">
                     <div className="w-9 h-9 rounded-xl bg-primary-500/10 flex items-center justify-center flex-shrink-0">
-                      <Calendar className="w-4 h-4 text-primary-500" />
+                      <Dumbbell className="w-4 h-4 text-primary-500" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-black text-slate-900 dark:text-white truncate">{appt.doctor}</p>
-                      <p className="text-[10px] text-slate-400 font-medium">{appt.specialty}</p>
+                      <p className="text-xs font-black text-slate-900 dark:text-white truncate">{workout.name}</p>
+                      <p className="text-[10px] text-slate-400 font-medium">{workout.type} · {workout.calories} cal</p>
                       <div className="flex items-center gap-1 mt-1">
                         <Clock className="w-3 h-3 text-slate-400" />
-                        <span className="text-[10px] text-slate-500 font-medium">{formatDate(appt.date)} · {appt.time}</span>
+                        <span className="text-[10px] text-slate-500 font-medium">{formatDate(workout.date)} · {workout.duration} min</span>
                       </div>
                     </div>
-                    <Badge variant={appt.status === 'confirmed' ? 'success' : 'warning'} dot>
-                      {appt.status}
+                    <Badge variant={workout.completed ? 'success' : 'warning'} dot>
+                      {workout.completed ? 'done' : 'planned'}
                     </Badge>
                   </div>
                 ))
@@ -742,7 +747,7 @@ export default function Dashboard() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
-          className="glass-card p-5 flex flex-col justify-between border border-slate-150 dark:border-white/5"
+          className="glass-card p-5 flex flex-col justify-between border border-slate-200 dark:border-white/5"
         >
           <div>
             <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-white/5 pb-2.5">
@@ -765,7 +770,7 @@ export default function Dashboard() {
                 </div>
               ) : (
                 records.slice(0, 3).map(record => (
-                  <div key={record.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-150 dark:border-white/5">
+                  <div key={record.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5">
                     <div className="w-9 h-9 rounded-xl bg-accent-500/10 flex items-center justify-center flex-shrink-0">
                       <FileText className="w-4 h-4 text-accent-500" />
                     </div>
@@ -788,7 +793,7 @@ export default function Dashboard() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.45 }}
-          className="glass-card p-5 border border-slate-150 dark:border-white/5 flex flex-col justify-between"
+          className="glass-card p-5 border border-slate-200 dark:border-white/5 flex flex-col justify-between"
         >
           <div>
             <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-white/5 pb-2.5">
@@ -830,13 +835,13 @@ export default function Dashboard() {
                       className={`flex items-start gap-2.5 p-2.5 rounded-xl border transition-all duration-200 cursor-pointer ${
                         isChecked 
                           ? 'bg-emerald-500/10 border-emerald-500/25 text-slate-500' 
-                          : 'bg-slate-50 dark:bg-white/5 border-slate-150 dark:border-white/5 hover:border-violet-500/30'
+                          : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/5 hover:border-violet-500/30'
                       }`}
                     >
                       <div className={`w-4 h-4 rounded mt-0.5 border flex items-center justify-center flex-shrink-0 transition-colors ${
                         isChecked 
                           ? 'bg-emerald-500 border-emerald-500 text-white' 
-                          : 'border-slate-350 dark:border-white/20'
+                          : 'border-slate-300 dark:border-white/20'
                       }`}>
                         {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
                       </div>
@@ -849,7 +854,7 @@ export default function Dashboard() {
                             {timeLabel}
                           </span>
                         </div>
-                        <p className={`text-[9px] mt-0.5 font-medium leading-none ${isChecked ? 'opacity-40' : 'text-slate-450'}`}>{pill.when_to_have}</p>
+                        <p className={`text-[9px] mt-0.5 font-medium leading-none ${isChecked ? 'opacity-40' : 'text-slate-400'}`}>{pill.when_to_have}</p>
                       </div>
                     </div>
                   );
