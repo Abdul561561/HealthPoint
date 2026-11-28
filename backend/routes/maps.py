@@ -56,6 +56,7 @@ async def nearby_pharmacies(
     lng: float = Query(..., description="Longitude"),
     filter_type: Optional[str] = Query("all", description="Filter: all, open_now"),
     radius: Optional[int] = Query(5000, description="Search radius in meters"),
+    location_label: Optional[str] = Query(None, description="Optional resolved location label"),
     current_user: dict = Depends(get_current_user),
 ):
-    return await get_nearby_pharmacies(lat, lng, filter_type or "all", radius or 5000)
+    return await get_nearby_pharmacies(lat, lng, filter_type or "all", radius or 5000, location_label=location_label)

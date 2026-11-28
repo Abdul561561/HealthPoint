@@ -13,6 +13,7 @@ import {
   Droplets,
   Dumbbell,
   Edit3,
+  ExternalLink,
   FileText,
   Moon,
   Pill,
@@ -454,10 +455,33 @@ export default function Notifications() {
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">{notif.message}</p>
-                        <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                          {notif.created_at ? new Date(notif.created_at).toLocaleString() : 'Recent'} · Open {notif.route || '/dashboard'}
-                        </p>
+                        <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-line">{notif.message}</p>
+                        {notif.metadata?.delivery_summary?.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pt-0.5">
+                            {notif.metadata.delivery_summary.map((ds, dIdx) => (
+                              <span
+                                key={`${ds.name}_${dIdx}`}
+                                className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-white/15"
+                              >
+                                {ds.name}: SMS {ds.sms_status}{ds.email_status ? ` · Email ${ds.email_status}` : ''}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400 dark:text-slate-500">
+                          <span>{notif.created_at ? new Date(notif.created_at).toLocaleString() : 'Recent'} · Open {notif.route || '/dashboard'}</span>
+                          {notif.metadata?.maps_url && (
+                            <a
+                              href={notif.metadata.maps_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
+                            >
+                              <ExternalLink className="w-3 h-3" /> Google Maps Link
+                            </a>
+                          )}
+                        </div>
                       </div>
                     </button>
 

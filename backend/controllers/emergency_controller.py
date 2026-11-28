@@ -240,12 +240,18 @@ async def trigger_sos_controller(user_email: str, sos_data: SOSCreate) -> Dict[s
     maps_url = build_google_maps_link(lat, lng)
     osm_url = build_osm_link(lat, lng)
 
+    # Sort contacts cleanly: primary first, then ascending priority
+    contact_dicts.sort(key=lambda c: (not bool(c.get("is_primary", False)), int(c.get("priority", 1) or 1)))
+
     alert_message = format_emergency_message(
         user_name=user_name,
         maps_url=maps_url,
         alert_time_display=display_time,
         location_label=sos_data.location_label,
         location_source=sos_data.location_source,
+        latitude=lat,
+        longitude=lng,
+        accuracy_meters=sos_data.accuracy_meters,
     )
 
     delivery_results = await dispatch_emergency_notifications(
@@ -285,30 +291,141 @@ async def trigger_sos_controller(user_email: str, sos_data: SOSCreate) -> Dict[s
 
     # Honest summary of real contact delivery (never claim SMS sent unless provider confirmed)
     sms_sent_count = sum(1 for r in delivery_results if r.get("sms_status") in ("Sent", "Delivered"))
+    sms_failed_count = sum(1 for r in delivery_results if r.get("sms_status") == "Failed")
     email_sent_count = sum(1 for r in delivery_results if r.get("email_status") == "Sent")
+    email_failed_count = sum(1 for r in delivery_results if r.get("email_status") == "Failed")
     manual_count = sum(1 for r in delivery_results if r.get("sms_status") == "Manual Fallback Required")
+
     delivery_note = (
         f"SMS sent via provider: {sms_sent_count}/{len(delivery_results)}; "
         f"Email sent: {email_sent_count}; "
         f"Manual SMS composer fallback: {manual_count}."
     )
+    loc_summary = f" Location link: {maps_url}" if maps_url else (f" Reported location: {sos_data.location_label}" if sos_data.location_label else " Location unavailable.")
 
-    notification_doc = {
-        "user_email": user_email,
-        "title": "Emergency SOS Activated",
-        "message": (
-            f"SOS event {event_id} recorded ({sos_data.location_source}). {delivery_note} "
-            "Dial 112 (India) or 911 directly for official emergency services."
-        ),
-        "category": "emergency",
-        "type": "emergency",
-        "route": "/emergency",
-        "date": display_time,
-        "created_at": now_iso,
-        "read": False,
-        "source": "sos",
+    notif_meta = {
+        "event_id": event_id,
+        "maps_url": maps_url,
+        "osm_url": osm_url,
+        "timestamp": display_time,
+        "location_source": sos_data.location_source,
+        "delivery_summary": [
+            {
+                "name": r.get("name"),
+                "phone": r.get("phone"),
+                "sms_status": r.get("sms_status"),
+                "email_status": r.get("email_status"),
+            }
+            for r in delivery_results
+        ],
     }
-    await db.notifications.insert_one(notification_doc)
+
+    notifications_to_insert: List[Dict[str, Any]] = [
+        {
+            "user_email": user_email,
+            "title": "Emergency SOS Activated",
+            "message": (
+                f"SOS alert activated at {display_time} ({sos_data.location_source})."
+                f"{loc_summary} Dial 112 (India) directly for official emergency services."
+            ),
+            "category": "emergency",
+            "type": "emergency",
+            "route": "/emergency",
+            "date": display_time,
+            "created_at": now_iso,
+            "read": False,
+            "source": "sos_activated",
+            "metadata": notif_meta,
+        }
+    ]
+
+    if len(delivery_results) > 0:
+        any_automated_success = sms_sent_count > 0 or email_sent_count > 0
+        any_automated_failure = sms_failed_count > 0 or email_failed_count > 0
+
+        if any_automated_success:
+            delivered_names = [
+                r["name"]
+                for r in delivery_results
+                if r.get("sms_status") in ("Sent", "Delivered") or r.get("email_status") == "Sent"
+            ]
+            notifications_to_insert.append({
+                "user_email": user_email,
+                "title": "SOS Location Alert Sent",
+                "message": (
+                    f"Emergency alert dispatched at {display_time} to {', '.join(delivered_names)}. "
+                    f"{delivery_note}{loc_summary}"
+                ),
+                "category": "emergency",
+                "type": "emergency",
+                "route": "/emergency",
+                "date": display_time,
+                "created_at": now_iso,
+                "read": False,
+                "source": "sos_alert_sent",
+                "metadata": notif_meta,
+            })
+
+        if any_automated_failure or (not any_automated_success and manual_count == 0):
+            failed_names = [
+                r["name"]
+                for r in delivery_results
+                if r.get("sms_status") == "Failed" or r.get("email_status") == "Failed"
+            ]
+            notifications_to_insert.append({
+                "user_email": user_email,
+                "title": "SOS Alert Delivery Failed",
+                "message": (
+                    f"Automated alert delivery failed at {display_time}"
+                    + (f" for {', '.join(failed_names)}" if failed_names else "")
+                    + ". Open Emergency SOS to send SMS manually or dial 112."
+                    + loc_summary
+                ),
+                "category": "emergency",
+                "type": "emergency",
+                "route": "/emergency",
+                "date": display_time,
+                "created_at": now_iso,
+                "read": False,
+                "source": "sos_alert_failed",
+                "metadata": notif_meta,
+            })
+        elif not any_automated_success and manual_count > 0:
+            notifications_to_insert.append({
+                "user_email": user_email,
+                "title": "SOS Alert Failed / Manual SMS Needed",
+                "message": (
+                    f"No automated SMS or email was delivered at {display_time} (SMS provider unconfigured / no email sent). "
+                    f"Use the mobile SMS buttons on Emergency SOS or call contacts directly.{loc_summary}"
+                ),
+                "category": "emergency",
+                "type": "emergency",
+                "route": "/emergency",
+                "date": display_time,
+                "created_at": now_iso,
+                "read": False,
+                "source": "sos_alert_failed",
+                "metadata": notif_meta,
+            })
+    else:
+        notifications_to_insert.append({
+            "user_email": user_email,
+            "title": "SOS Alert Failed — No Contacts Configured",
+            "message": (
+                f"SOS activated at {display_time}, but no emergency contacts are saved on your account. "
+                f"Add contacts or dial 112 directly.{loc_summary}"
+            ),
+            "category": "emergency",
+            "type": "emergency",
+            "route": "/emergency",
+            "date": display_time,
+            "created_at": now_iso,
+            "read": False,
+            "source": "sos_alert_failed",
+            "metadata": notif_meta,
+        })
+
+    await db.notifications.insert_many(notifications_to_insert)
     await _log_audit(db, user_email, "sos_activated", event_id=event_id, details={"delivery_note": delivery_note})
 
     return sos_doc

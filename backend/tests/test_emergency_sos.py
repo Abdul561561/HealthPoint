@@ -193,3 +193,106 @@ async def test_emergency_sos_gps_manual_sms_providers_duplicate_cancel_and_isola
         await db.emergencies.delete_many({"user_email": {"$in": [user_a, user_b]}})
         await db.emergencyAuditLogs.delete_many({"user_email": {"$in": [user_a, user_b]}})
         await db.notifications.delete_many({"user_email": {"$in": [user_a, user_b]}})
+
+
+async def test_emergency_email_validation_smtp_fallback_and_notifications(monkeypatch):
+    db = get_database()
+    if db is None:
+        pytest.skip("MongoDB connection not available")
+
+    email = "sos_email_notif@healthpoint.app"
+    await db.users.delete_many({"email": email})
+    await db.users.insert_one({"name": "Meera Nair", "email": email, "role": "patient", "is_verified": True})
+    token = create_access_token({"sub": email, "role": "patient"})
+
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            # Invalid contact email rejected (422)
+            bad_email = await client.post(
+                "/api/emergency/contacts",
+                json={"name": "Bad Email", "relation": "Friend", "phone": "9876543211", "email": "not-an-email"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert bad_email.status_code == 422
+
+            # Valid contact with email created cleanly
+            good_ct = await client.post(
+                "/api/emergency/contacts",
+                json={
+                    "name": "Anil Nair",
+                    "relation": "Father",
+                    "phone": "9876543211",
+                    "email": "anil.nair@example.test",
+                    "priority": 1,
+                    "is_primary": True,
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert good_ct.status_code == 200
+
+            # Mock SMTP credentials & SMTP send + SMS provider unconfigured -> Email Sent + SOS notifications created
+            monkeypatch.setenv("SMS_PROVIDER", "none")
+            monkeypatch.setenv("SMTP_EMAIL", "sender@example.test")
+            monkeypatch.setenv("SMTP_APP_PASSWORD", "test_app_pass")
+            sent_emails = []
+
+            def fake_smtp_sync(to_email, subject, text_body, html_body):
+                sent_emails.append((to_email, subject, text_body, html_body))
+
+            with patch("services.emergency_notification_service._send_smtp_sync", side_effect=fake_smtp_sync):
+                sos_res = await client.post(
+                    "/api/emergency/sos",
+                    json={
+                        "latitude": 12.9716,
+                        "longitude": 77.5946,
+                        "accuracy_meters": 14.0,
+                        "location_source": "gps",
+                        "send_email_fallback": True,
+                    },
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+
+            assert sos_res.status_code == 200
+            ev = sos_res.json()
+            assert "https://www.google.com/maps?q=12.971600,77.594600" in ev["alert_message"]
+            assert "12.971600, 77.594600" in ev["alert_message"]
+            assert "±14 m" in ev["alert_message"]
+            assert ev["delivery_results"][0]["email_status"] == "Sent"
+            assert len(sent_emails) == 1
+            assert sent_emails[0][0] == "anil.nair@example.test"
+
+            # Verify notification integration recorded SOS Activated + SOS Location Alert Sent with Google Maps URL
+            notifs = await client.get("/api/notifications", headers={"Authorization": f"Bearer {token}"})
+            assert notifs.status_code == 200
+            titles = [n["title"] for n in notifs.json()]
+            assert "Emergency SOS Activated" in titles
+            assert "SOS Location Alert Sent" in titles
+            sos_notif = next(n for n in notifs.json() if n["title"] == "SOS Location Alert Sent")
+            assert sos_notif["metadata"]["maps_url"] == "https://www.google.com/maps?q=12.971600,77.594600"
+
+            # Cancel first SOS then simulate SMTP & SMS failure -> SOS Alert Delivery Failed notification
+            await client.post(f"/api/emergency/sos/{ev['id']}/cancel", headers={"Authorization": f"Bearer {token}"})
+            await db.notifications.delete_many({"user_email": email})
+            with patch("services.emergency_notification_service._send_smtp_sync", side_effect=RuntimeError("SMTP down")):
+                fail_res = await client.post(
+                    "/api/emergency/sos",
+                    json={
+                        "latitude": 12.9716,
+                        "longitude": 77.5946,
+                        "location_source": "gps",
+                        "send_email_fallback": True,
+                    },
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+            assert fail_res.status_code == 200
+            assert fail_res.json()["delivery_results"][0]["email_status"] == "Failed"
+            fail_notifs = await client.get("/api/notifications", headers={"Authorization": f"Bearer {token}"})
+            fail_titles = [n["title"] for n in fail_notifs.json()]
+            assert "Emergency SOS Activated" in fail_titles
+            assert "SOS Alert Delivery Failed" in fail_titles
+    finally:
+        await db.users.delete_many({"email": email})
+        await db.emergencyContacts.delete_many({"user_email": email})
+        await db.emergencies.delete_many({"user_email": email})
+        await db.emergencyAuditLogs.delete_many({"user_email": email})
+        await db.notifications.delete_many({"user_email": email})

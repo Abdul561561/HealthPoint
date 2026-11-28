@@ -34,6 +34,7 @@ def _serialize_notification(doc: Dict[str, Any]) -> Dict[str, Any]:
         "read": bool(doc.get("read", False)),
         "source": doc.get("source", "system"),
         "reminder_id": doc.get("reminder_id"),
+        "metadata": doc.get("metadata"),
         "created_at": created_at,
     }
 

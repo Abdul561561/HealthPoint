@@ -250,3 +250,87 @@ async def test_osm_overpass_mirror_fallback_on_406_and_502():
     assert res["ok"] is True
     assert client.post.call_count == 2
     assert any("Hospital" in p["name"] for p in res["results"])
+
+
+async def test_overpass_all_fail_nominatim_poi_fallback_cache_and_validation():
+    import httpx as real_httpx
+
+    clear_osm_cache()
+
+    # 1. Invalid coordinates rejected safely
+    bad_coords = await search_nearby_osm_facilities(140.0, 77.5946, specialty="All")
+    assert bad_coords["ok"] is False
+    assert bad_coords["error_code"] == "invalid_coordinates"
+    assert bad_coords["results"] == []
+
+    # 2. All Overpass mirrors return 504 -> Nominatim bounded POI fallback succeeds cleanly
+    resp_504 = MagicMock()
+    resp_504.status_code = 504
+    resp_504.json = MagicMock(return_value={})
+
+    nom_poi_resp = MagicMock()
+    nom_poi_resp.status_code = 200
+    nom_poi_resp.json = MagicMock(return_value=[
+        {
+            "osm_type": "node",
+            "osm_id": 555111,
+            "lat": "12.9740",
+            "lon": "77.5960",
+            "class": "amenity",
+            "type": "pharmacy",
+            "name": "Wellness Pharmacy",
+            "display_name": "Wellness Pharmacy, Church Street, Bengaluru, 560001, India",
+            "address": {"road": "Church Street", "city": "Bengaluru", "postcode": "560001"},
+            "extratags": {"phone": "+91 80 2222 3333", "opening_hours": "Mo-Su 08:00-22:00"},
+        }
+    ])
+
+    fallback_client = MagicMock()
+    fallback_client.__aenter__ = AsyncMock(return_value=fallback_client)
+    fallback_client.__aexit__ = AsyncMock(return_value=False)
+    fallback_client.post = AsyncMock(return_value=resp_504)
+    fallback_client.get = AsyncMock(return_value=nom_poi_resp)
+
+    with patch("services.osm_service.httpx.AsyncClient", return_value=fallback_client):
+        res_fb = await search_nearby_osm_facilities(
+            12.9716, 77.5946, specialty="Pharmacy", facility_mode="pharmacy", radius=3000
+        )
+
+    assert res_fb["ok"] is True
+    assert res_fb["source"] == "openstreetmap-nominatim-fallback"
+    assert res_fb["cached"] is False
+    assert len(res_fb["results"]) == 1
+    assert res_fb["results"][0]["name"] == "Wellness Pharmacy"
+    assert res_fb["results"][0]["phone"] == "+91 80 2222 3333"
+
+    # 3. Subsequent identical query uses TTL cache without hitting HTTP client
+    with patch("services.osm_service.httpx.AsyncClient", side_effect=AssertionError("Cache should avoid HTTP")):
+        res_cached = await search_nearby_osm_facilities(
+            12.9716, 77.5946, specialty="Pharmacy", facility_mode="pharmacy", radius=3000
+        )
+    assert res_cached["ok"] is True
+    assert res_cached["cached"] is True
+    assert res_cached["results"][0]["name"] == "Wellness Pharmacy"
+
+    # 4. Both Overpass AND Nominatim failing -> returns ok=False and never fabricates facilities
+    clear_osm_cache()
+    fail_client = MagicMock()
+    fail_client.__aenter__ = AsyncMock(return_value=fail_client)
+    fail_client.__aexit__ = AsyncMock(return_value=False)
+    fail_client.post = AsyncMock(side_effect=real_httpx.TimeoutException("Overpass timeout"))
+    fail_client.get = AsyncMock(side_effect=real_httpx.TimeoutException("Nominatim timeout"))
+
+    with patch("services.osm_service.httpx.AsyncClient", return_value=fail_client):
+        res_total_fail = await search_nearby_osm_facilities(12.9716, 77.5946, specialty="Cardiologist", radius=5000)
+    assert res_total_fail["ok"] is False
+    assert res_total_fail["results"] == []
+    assert res_total_fail["error_code"] == "timeout"
+
+    # 5. Geocode Nominatim failure returns structured error
+    clear_osm_cache()
+    geo_fail = _make_httpx_mock(503, {})
+    with patch("services.osm_service.httpx.AsyncClient", return_value=geo_fail):
+        g_res = await geocode_location("560038")
+    assert g_res["ok"] is False
+    assert g_res["error_code"] == "http_503"
+    assert g_res["results"] == []

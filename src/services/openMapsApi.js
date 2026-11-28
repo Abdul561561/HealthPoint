@@ -6,6 +6,7 @@
 
 import axios from 'axios';
 import {
+  extractMapsErrorMessage,
   fetchNearbyDoctors,
   fetchNearbyHospitals,
   fetchNearbyPharmacies,
@@ -29,43 +30,55 @@ export async function searchNearbyDoctors(lat, lng, specialty = 'All', radius = 
   if (lat === undefined || lat === null || lng === undefined || lng === null) {
     throw new Error('Location coordinates are required to search nearby doctors.');
   }
-  const res = await fetchNearbyDoctors({ lat: Number(lat), lng: Number(lng), specialty, radius });
-  if (!res?.ok) {
-    throw new Error(res?.error || 'OpenStreetMap doctor search failed.');
+  try {
+    const res = await fetchNearbyDoctors({ lat: Number(lat), lng: Number(lng), specialty, radius });
+    if (!res?.ok) {
+      throw new Error(res?.error || 'OpenStreetMap doctor search failed.');
+    }
+    return res.results || [];
+  } catch (err) {
+    throw new Error(extractMapsErrorMessage(err, 'OpenStreetMap doctor search failed.'), { cause: err });
   }
-  return res.results || [];
 }
 
 export async function searchNearbyPharmacies(lat, lng, radius = 3000, openOnly = false) {
   if (lat === undefined || lat === null || lng === undefined || lng === null) {
     throw new Error('Location coordinates are required to search nearby pharmacies.');
   }
-  const res = await fetchNearbyPharmacies({
-    lat: Number(lat),
-    lng: Number(lng),
-    filterType: openOnly ? 'open_now' : 'all',
-    radius,
-  });
-  if (!res?.ok) {
-    throw new Error(res?.error || 'OpenStreetMap pharmacy search failed.');
+  try {
+    const res = await fetchNearbyPharmacies({
+      lat: Number(lat),
+      lng: Number(lng),
+      filterType: openOnly ? 'open_now' : 'all',
+      radius,
+    });
+    if (!res?.ok) {
+      throw new Error(res?.error || 'OpenStreetMap pharmacy search failed.');
+    }
+    return res.results || [];
+  } catch (err) {
+    throw new Error(extractMapsErrorMessage(err, 'OpenStreetMap pharmacy search failed.'), { cause: err });
   }
-  return res.results || [];
 }
 
 export async function searchNearbyHospitals(lat, lng, radius = 8000) {
   if (lat === undefined || lat === null || lng === undefined || lng === null) {
     throw new Error('Location coordinates are required to search nearby hospitals.');
   }
-  const res = await fetchNearbyHospitals({ lat: Number(lat), lng: Number(lng), radius });
-  if (!res?.ok) {
-    throw new Error(res?.error || 'OpenStreetMap hospital search failed.');
+  try {
+    const res = await fetchNearbyHospitals({ lat: Number(lat), lng: Number(lng), radius });
+    if (!res?.ok) {
+      throw new Error(res?.error || 'OpenStreetMap hospital search failed.');
+    }
+    return (res.results || []).map((item) => ({
+      ...item,
+      id: item.place_id,
+      type: item.category || 'Hospital',
+      distance: `${item.distance_km} km`,
+    }));
+  } catch (err) {
+    throw new Error(extractMapsErrorMessage(err, 'OpenStreetMap hospital search failed.'), { cause: err });
   }
-  return (res.results || []).map((item) => ({
-    ...item,
-    id: item.place_id,
-    type: item.category || 'Hospital',
-    distance: `${item.distance_km} km`,
-  }));
 }
 
 export async function searchAddress(query) {

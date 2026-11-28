@@ -33,6 +33,17 @@ def normalize_and_validate_phone(raw_phone: str) -> str:
     )
 
 
+def normalize_and_validate_optional_email(raw_email: Optional[str]) -> Optional[str]:
+    if raw_email is None:
+        return None
+    cleaned = raw_email.strip()
+    if not cleaned:
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", cleaned):
+        raise ValueError("Enter a valid email address for the emergency contact.")
+    return cleaned
+
+
 class EmergencyContactCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     relation: str = Field(..., min_length=1, max_length=60)
@@ -45,6 +56,11 @@ class EmergencyContactCreate(BaseModel):
     @classmethod
     def check_phone(cls, v: str) -> str:
         return normalize_and_validate_phone(v)
+
+    @field_validator("email")
+    @classmethod
+    def check_email(cls, v: Optional[str]) -> Optional[str]:
+        return normalize_and_validate_optional_email(v)
 
 
 class EmergencyContactUpdate(BaseModel):
@@ -59,6 +75,11 @@ class EmergencyContactUpdate(BaseModel):
     @classmethod
     def check_phone(cls, v: Optional[str]) -> Optional[str]:
         return normalize_and_validate_phone(v) if v is not None else None
+
+    @field_validator("email")
+    @classmethod
+    def check_email(cls, v: Optional[str]) -> Optional[str]:
+        return normalize_and_validate_optional_email(v)
 
 
 class EmergencyContactModel(BaseModel):

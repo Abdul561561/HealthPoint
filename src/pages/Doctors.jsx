@@ -1,39 +1,43 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Search, MapPin, Navigation, Clock, X, Stethoscope, RefreshCw,
-  Map, List, Sparkles, Navigation2, Phone, Globe, ExternalLink, AlertCircle, LocateFixed
+  MapPin, Navigation, Clock, Stethoscope, RefreshCw,
+  Map, List, Columns, Navigation2, Phone, Globe, ExternalLink, AlertCircle, LocateFixed, Info
 } from 'lucide-react';
 import { useDispatch } from 'react-redux';
 import { addToast } from '../redux/slices/uiSlice';
+import { useOsmDiscoveryLocation } from '../hooks/useOsmDiscoveryLocation';
+import HealthcareLeafletMap from '../components/maps/HealthcareLeafletMap';
+import OsmLocationToolbar from '../components/maps/OsmLocationToolbar';
 import { getRoute } from '../services/openMapsApi';
-import {
-  fetchNearbyDoctors,
-  geocodeLocationQuery,
-} from '../services/mapsApi';
+import { extractMapsErrorMessage, fetchNearbyDoctors } from '../services/mapsApi';
 
 const SPECIALTIES = [
-  'All', 'General Physician', 'Cardiologist', 'Dermatologist', 'Pediatrician',
-  'Neurologist', 'Orthopedic Doctor', 'ENT Specialist', 'Gynecologist',
-  'Dentist', 'Ophthalmologist', 'Psychiatrist', 'Hospital', 'Emergency Care',
-];
-
-const RADIUS_OPTIONS = [
-  { label: '1 km', value: 1000 },
-  { label: '3 km', value: 3000 },
-  { label: '5 km', value: 5000 },
-  { label: '10 km', value: 10000 },
+  'All',
+  'General Physician',
+  'Cardiologist',
+  'Dermatologist',
+  'Pediatrician',
+  'Neurologist',
+  'Orthopedic Doctor',
+  'ENT Specialist',
+  'Gynecologist',
+  'Dentist',
+  'Ophthalmologist',
+  'Hospital',
+  'Clinic',
+  'Emergency Care',
 ];
 
 function DoctorCardSkeleton() {
   return (
-    <div className="glass-card p-4 animate-pulse">
+    <div className="glass-card p-4 animate-pulse !transform-none">
       <div className="flex gap-3">
-        <div className="w-14 h-14 rounded-2xl bg-slate-200 dark:bg-white/10 flex-shrink-0" />
+        <div className="w-12 h-12 rounded-2xl bg-slate-200 dark:bg-white/10 flex-shrink-0" />
         <div className="flex-1 space-y-2">
           <div className="h-4 bg-slate-200 dark:bg-white/10 rounded w-3/4" />
           <div className="h-3 bg-slate-200 dark:bg-white/10 rounded w-1/2" />
-          <div className="h-3 bg-slate-200 dark:bg-white/10 rounded w-2/3" />
+          <div className="h-3 bg-slate-200 dark:bg-white/10 rounded w-5/6" />
         </div>
       </div>
       <div className="flex gap-2 mt-4">
@@ -50,40 +54,54 @@ function DoctorCard({ doctor, isSelected, onSelect, onDirections, routeActive })
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 16 }}
+      initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
+      exit={{ opacity: 0, scale: 0.97 }}
       onClick={() => onSelect(doctor)}
-      className={`glass-card p-4 cursor-pointer border-2 transition-all duration-200 hover:shadow-lg hover:shadow-indigo-500/10 hover:border-indigo-400/45 ${
-        isSelected ? 'border-indigo-500 bg-indigo-500/5 dark:bg-indigo-500/10 shadow-indigo-500/10' : 'border-transparent'
+      className={`glass-card p-4 cursor-pointer border-2 transition-all duration-200 hover:shadow-lg hover:border-indigo-400/50 ${
+        isSelected
+          ? 'border-indigo-500 bg-indigo-500/[0.04] dark:bg-indigo-500/10 shadow-indigo-500/10'
+          : 'border-transparent'
       }`}
     >
-      <div className="flex gap-3">
-        <div className="w-14 h-14 rounded-2xl flex-shrink-0 overflow-hidden bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-md">
-          <Stethoscope className="w-7 h-7 text-white" />
+      <div className="flex gap-3 items-start">
+        <div className="w-11 h-11 rounded-2xl flex-shrink-0 bg-gradient-to-br from-indigo-500 to-sky-600 flex items-center justify-center shadow-sm">
+          <Stethoscope className="w-5 h-5 text-white" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-1">
-            <h3 className="font-bold text-slate-900 dark:text-white text-sm leading-tight line-clamp-1 flex-1">{doctor.name}</h3>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300">
-              {doctor.category || 'Facility'}
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="font-bold text-slate-900 dark:text-white text-sm leading-snug line-clamp-1">
+              {doctor.name}
+            </h3>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 border border-indigo-500/20">
+              {doctor.category || 'Healthcare Facility'}
             </span>
           </div>
-          <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 mt-0.5">{doctor.specialty}</p>
-          <p className="text-[11px] text-slate-500 dark:text-slate-300 mt-0.5 line-clamp-1 flex items-center gap-1">
-            <MapPin className="w-3 h-3 flex-shrink-0" />{doctor.address}
+          <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 mt-0.5 line-clamp-1">
+            {doctor.specialty}
+          </p>
+          <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 line-clamp-2 flex items-start gap-1">
+            <MapPin className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-slate-400" />
+            <span>{doctor.address}</span>
           </p>
         </div>
       </div>
 
-      <div className="flex items-center gap-3 mt-3 pt-3 border-t border-slate-200/70 dark:border-white/10 text-[11px] text-slate-600 dark:text-slate-300">
-        <span className="inline-flex items-center gap-1 font-semibold">
-          <Navigation className="w-3 h-3 text-indigo-500" />{doctor.distance_km} km
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-3 pt-2.5 border-t border-slate-200/70 dark:border-white/10 text-[11px] text-slate-600 dark:text-slate-300">
+        <span className="inline-flex items-center gap-1 font-bold text-indigo-600 dark:text-indigo-300">
+          <Navigation className="w-3 h-3" />
+          {doctor.distance_km} km
         </span>
-        <span className="inline-flex items-center gap-1 truncate text-slate-500 dark:text-slate-400">
-          <Clock className="w-3 h-3 flex-shrink-0" />{hoursLabel}
+        <span className="inline-flex items-center gap-1 truncate text-slate-500 dark:text-slate-400 max-w-[200px]">
+          <Clock className="w-3 h-3 flex-shrink-0" />
+          <span className="truncate">{hoursLabel}</span>
         </span>
-        <span className="text-[10px] text-slate-400 ml-auto">OSM</span>
+        {doctor.phone && (
+          <span className="inline-flex items-center gap-1 font-medium text-emerald-700 dark:text-emerald-300">
+            <Phone className="w-3 h-3" />
+            {doctor.phone}
+          </span>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-2 mt-3">
@@ -91,9 +109,9 @@ function DoctorCard({ doctor, isSelected, onSelect, onDirections, routeActive })
           <a
             href={`tel:${doctor.phone}`}
             onClick={(e) => e.stopPropagation()}
-            className="flex-1 min-w-[90px] py-2 rounded-xl text-xs font-semibold border border-slate-200 dark:border-white/15 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10 flex items-center justify-center gap-1.5 transition-all"
+            className="btn-secondary py-2 px-3 rounded-xl text-xs font-bold"
           >
-            <Phone className="w-3.5 h-3.5" />Call
+            <Phone className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> Call
           </a>
         )}
         {doctor.website && (
@@ -102,16 +120,20 @@ function DoctorCard({ doctor, isSelected, onSelect, onDirections, routeActive })
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="py-2 px-3 rounded-xl text-xs font-semibold border border-slate-200 dark:border-white/15 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10 flex items-center justify-center gap-1.5 transition-all"
+            className="btn-secondary py-2 px-3 rounded-xl text-xs font-bold"
           >
-            <Globe className="w-3.5 h-3.5" />Site
+            <Globe className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" /> Website
           </a>
         )}
         <button
-          onClick={(e) => { e.stopPropagation(); onDirections(doctor); }}
-          className={`flex-1 min-w-[110px] py-2 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 transition-all ${
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDirections(doctor);
+          }}
+          className={`flex-1 min-w-[110px] py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
             routeActive
-              ? 'bg-indigo-500 border-indigo-500 text-white hover:bg-indigo-600'
+              ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-700'
               : 'btn-primary'
           }`}
         >
@@ -124,10 +146,10 @@ function DoctorCard({ doctor, isSelected, onSelect, onDirections, routeActive })
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="py-2 px-3 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-white/20 flex items-center justify-center gap-1 transition-all"
+            className="btn-secondary py-2 px-3 rounded-xl text-xs font-bold"
             title="OpenStreetMap Directions"
           >
-            <ExternalLink className="w-3.5 h-3.5" />OSM
+            <ExternalLink className="w-3.5 h-3.5" /> Directions
           </a>
         )}
       </div>
@@ -137,349 +159,202 @@ function DoctorCard({ doctor, isSelected, onSelect, onDirections, routeActive })
 
 export default function Doctors() {
   const dispatch = useDispatch();
-
-  const [coords, setCoords] = useState(null);
-  const [locationLabel, setLocationLabel] = useState('');
-  const [locationStatus, setLocationStatus] = useState('prompting');
+  const {
+    coords,
+    locationLabel,
+    locationStatus,
+    addressQuery,
+    addressSuggestions,
+    showSuggestions,
+    setShowSuggestions,
+    geocodeLoading,
+    geocodeError,
+    requestBrowserLocation,
+    handleAddressChange,
+    submitAddress,
+    selectSuggestion,
+    clearAddressInput,
+  } = useOsmDiscoveryLocation({ gpsLabel: 'Your Current GPS Location' });
 
   const [search, setSearch] = useState('');
   const [specialty, setSpecialty] = useState('All');
   const [radius, setRadius] = useState(5000);
   const [withPhoneOnly, setWithPhoneOnly] = useState(false);
-
-  const [addressQuery, setAddressQuery] = useState('');
-  const [addressSuggestions, setAddressSuggestions] = useState([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [viewMode, setViewMode] = useState('split'); // split | list | map
 
   const [doctors, setDoctors] = useState([]);
   const [loading, setLoading] = useState(false);
   const [osmError, setOsmError] = useState(null);
   const [osmNotice, setOsmNotice] = useState(null);
+  const [sourceInfo, setSourceInfo] = useState(null);
   const [manualOsmUrl, setManualOsmUrl] = useState(null);
 
-  const [activeRoute, setActiveRoute] = useState(null);
-  const [routeInfo, setRouteInfo] = useState(null);
   const [selectedDoctor, setSelectedDoctor] = useState(null);
-  const [viewMode, setViewMode] = useState('split');
+  const [activeRouteId, setActiveRouteId] = useState(null);
+  const [routeCoordinates, setRouteCoordinates] = useState(null);
+  const [routeInfo, setRouteInfo] = useState(null);
+  const [routeLoading, setRouteLoading] = useState(false);
 
-  const mapDivRef = useRef(null);
-  const mapInstanceRef = useRef(null);
-  const tileLayerRef = useRef(null);
-  const userMarkerRef = useRef(null);
-  const markersRef = useRef([]);
-  const routePolylineRef = useRef(null);
-  const suggestionTimerRef = useRef(null);
-
-  const requestBrowserLocation = useCallback(() => {
-    if (!navigator.geolocation) {
-      setLocationStatus('denied');
-      return;
-    }
-    setLocationStatus('prompting');
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        setLocationLabel('Your Current Location');
-        setLocationStatus('granted');
-      },
-      () => {
-        setLocationStatus('denied');
-      },
-      { timeout: 10000 }
-    );
-  }, []);
-
-  useEffect(() => {
-    if (!navigator.geolocation) {
-      Promise.resolve().then(() => setLocationStatus('denied'));
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        setLocationLabel('Your Current Location');
-        setLocationStatus('granted');
-      },
-      () => {
-        setLocationStatus('denied');
-      },
-      { timeout: 10000 }
-    );
-  }, []);
-
-  useEffect(() => {
-    if (!coords || !mapDivRef.current || viewMode === 'list' || !window.L) return;
-
-    if (!mapInstanceRef.current) {
-      mapInstanceRef.current = window.L.map(mapDivRef.current, {
-        zoomControl: false,
-      }).setView([coords.lat, coords.lng], 14);
-      window.L.control.zoom({ position: 'bottomright' }).addTo(mapInstanceRef.current);
-    } else {
-      mapInstanceRef.current.setView([coords.lat, coords.lng], 14);
-    }
-
-    if (tileLayerRef.current) {
-      tileLayerRef.current.remove();
-    }
-    tileLayerRef.current = window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    }).addTo(mapInstanceRef.current);
-
-    if (userMarkerRef.current) userMarkerRef.current.remove();
-    const pulseIcon = window.L.divIcon({
-      html: `
-        <div class="relative w-6 h-6 flex items-center justify-center">
-          <div class="absolute w-6 h-6 bg-indigo-500 rounded-full opacity-40 animate-ping"></div>
-          <div class="w-3.5 h-3.5 bg-indigo-600 rounded-full border-2 border-white shadow-md z-10"></div>
-        </div>
-      `,
-      className: 'custom-user-location-pulse',
-      iconSize: [24, 24],
-      iconAnchor: [12, 12],
-    });
-    userMarkerRef.current = window.L.marker([coords.lat, coords.lng], { icon: pulseIcon, zIndexOffset: 1000 })
-      .addTo(mapInstanceRef.current)
-      .bindPopup(`<strong class="text-xs">${locationLabel || 'Selected Location'}</strong>`);
-  }, [coords, viewMode, locationLabel]);
-
-  const handleAddressInputChange = (e) => {
-    const val = e.target.value;
-    setAddressQuery(val);
-    if (suggestionTimerRef.current) clearTimeout(suggestionTimerRef.current);
-
-    if (val.trim().length < 2) {
-      setAddressSuggestions([]);
-      setShowSuggestions(false);
-      return;
-    }
-
-    suggestionTimerRef.current = setTimeout(async () => {
-      try {
-        const geo = await geocodeLocationQuery(val.trim());
-        const list = geo?.results || [];
-        setAddressSuggestions(list);
-        setShowSuggestions(list.length > 0);
-      } catch (err) {
-        console.error('Nominatim suggestions failed:', err);
-      }
-    }, 350);
-  };
-
-  const handleManualAddressSubmit = async (e) => {
-    e.preventDefault();
-    if (!addressQuery.trim()) return;
-    try {
-      const geo = await geocodeLocationQuery(addressQuery.trim());
-      if (geo?.ok && geo.results?.length) {
-        handleSelectAddress(geo.results[0]);
-      } else {
-        dispatch(addToast({ type: 'error', message: geo?.error || 'Location or PIN code not found.' }));
-      }
-    } catch {
-      dispatch(addToast({ type: 'error', message: 'Failed to resolve location via OpenStreetMap Nominatim.' }));
-    }
-  };
-
-  const handleSelectAddress = (suggestion) => {
-    setCoords({ lat: suggestion.lat, lng: suggestion.lng });
-    setLocationLabel(suggestion.display_name);
-    setLocationStatus('manual');
-    setAddressQuery(suggestion.display_name);
-    setShowSuggestions(false);
-
-    if (routePolylineRef.current) {
-      routePolylineRef.current.remove();
-      routePolylineRef.current = null;
-    }
-    setActiveRoute(null);
+  const clearRoute = useCallback(() => {
+    setActiveRouteId(null);
+    setRouteCoordinates(null);
     setRouteInfo(null);
-  };
+  }, []);
 
-  const fetchDoctors = useCallback(async () => {
+  const loadDoctors = useCallback(async () => {
     if (!coords) return;
     setLoading(true);
     setOsmError(null);
     setOsmNotice(null);
     setManualOsmUrl(null);
     setSelectedDoctor(null);
+    clearRoute();
 
     try {
       const res = await fetchNearbyDoctors({
         lat: coords.lat,
         lng: coords.lng,
-        specialty,
+        specialty: specialty === 'Clinic' ? 'General Physician' : specialty,
         radius,
         locationLabel,
       });
+
       if (res?.ok) {
-        setDoctors(res.results || []);
+        const rawList = res.results || [];
+        const list =
+          specialty === 'Clinic'
+            ? rawList.filter((item) => (item.category || '').toLowerCase().includes('clinic'))
+            : rawList;
+        setDoctors(list);
         setOsmNotice(res.notice || null);
         setManualOsmUrl(res.manual_maps_url || null);
+        setSourceInfo({
+          source: res.source || 'openstreetmap',
+          mirror: res.mirror_used || null,
+          cached: Boolean(res.cached),
+        });
       } else {
         setDoctors([]);
-        setOsmError(res?.error || 'OpenStreetMap Overpass query could not complete.');
+        setOsmError(res?.error || 'OpenStreetMap discovery query could not complete.');
         setManualOsmUrl(
           res?.manual_maps_url ||
             `https://www.openstreetmap.org/search?query=${encodeURIComponent(specialty === 'All' ? 'clinic hospital' : specialty)}#map=14/${coords.lat}/${coords.lng}`
         );
       }
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      console.error('Doctors discovery error:', err);
       setDoctors([]);
-      setOsmError('Unable to reach HealthPoint OpenStreetMap discovery service.');
-      setManualOsmUrl(`https://www.openstreetmap.org/search?query=hospital#map=14/${coords.lat}/${coords.lng}`);
+      setOsmError(extractMapsErrorMessage(err, 'Unable to reach HealthPoint OpenStreetMap discovery service.'));
+      setManualOsmUrl(
+        `https://www.openstreetmap.org/search?query=${encodeURIComponent(specialty === 'All' ? 'hospital clinic' : specialty)}#map=14/${coords.lat}/${coords.lng}`
+      );
     } finally {
       setLoading(false);
     }
-  }, [coords, specialty, radius, locationLabel]);
+  }, [coords, specialty, radius, locationLabel, clearRoute]);
 
   useEffect(() => {
-    let active = true;
-    Promise.resolve().then(() => {
-      if (active && coords) {
-        fetchDoctors();
-      }
-    });
-    return () => {
-      active = false;
-    };
-  }, [coords, fetchDoctors]);
-
-  useEffect(() => {
-    if (!mapInstanceRef.current || viewMode === 'list' || !window.L) return;
-
-    markersRef.current.forEach((m) => m.remove());
-    markersRef.current = [];
-
-    doctors.forEach((doc) => {
-      if (doc.latitude === undefined || doc.longitude === undefined) return;
-      const isSelected = selectedDoctor?.place_id === doc.place_id;
-      const docIcon = window.L.divIcon({
-        html: `
-          <div class="relative group cursor-pointer transition-all duration-300 transform ${isSelected ? 'scale-125 z-[1000]' : 'hover:scale-110'}">
-            <div class="w-10 h-10 rounded-2xl flex items-center justify-center border-2 shadow-lg transition-all ${
-              isSelected
-                ? 'bg-indigo-500 border-white text-white shadow-indigo-500/50 scale-110'
-                : 'bg-white border-indigo-500 text-indigo-500 dark:bg-slate-900 dark:border-indigo-400 dark:text-indigo-400'
-            }">
-              <span class="text-lg">🏥</span>
-            </div>
-            <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 border-r border-b ${
-              isSelected ? 'bg-indigo-500 border-white' : 'bg-white border-indigo-500 dark:bg-slate-900 dark:border-indigo-400'
-            }"></div>
-          </div>
-        `,
-        className: 'custom-doctor-marker',
-        iconSize: [40, 40],
-        iconAnchor: [20, 40],
-      });
-
-      const marker = window.L.marker([doc.latitude, doc.longitude], { icon: docIcon }).addTo(mapInstanceRef.current);
-      marker.on('click', () => {
-        setSelectedDoctor(doc);
-        mapInstanceRef.current.panTo([doc.latitude, doc.longitude]);
-      });
-      markersRef.current.push(marker);
-    });
-  }, [doctors, selectedDoctor, viewMode]);
+    if (!coords) return undefined;
+    const t = setTimeout(() => {
+      loadDoctors();
+    }, 0);
+    return () => clearTimeout(t);
+  }, [coords, loadDoctors]);
 
   const handleDirections = async (doctor) => {
-    if (!coords || !mapInstanceRef.current || !window.L) return;
+    if (!coords) return;
+    if (viewMode === 'list') setViewMode('split');
 
-    if (activeRoute === doctor.place_id) {
-      if (routePolylineRef.current) {
-        routePolylineRef.current.remove();
-        routePolylineRef.current = null;
-      }
-      setActiveRoute(null);
-      setRouteInfo(null);
-      mapInstanceRef.current.setView([coords.lat, coords.lng], 14);
+    if (activeRouteId === doctor.place_id) {
+      clearRoute();
       return;
     }
 
     try {
       setSelectedDoctor(doctor);
-      setLoading(true);
+      setRouteLoading(true);
       const routeData = await getRoute(coords, { lat: doctor.latitude, lng: doctor.longitude });
-
-      if (routePolylineRef.current) {
-        routePolylineRef.current.remove();
-      }
-      routePolylineRef.current = window.L.polyline(routeData.coordinates, {
-        color: '#6366f1',
-        weight: 5,
-        opacity: 0.85,
-        dashArray: '10, 8',
-      }).addTo(mapInstanceRef.current);
-
-      setActiveRoute(doctor.place_id);
+      setRouteCoordinates(routeData.coordinates);
+      setActiveRouteId(doctor.place_id);
       setRouteInfo({ distance: routeData.distance_km, duration: routeData.duration_min });
-
-      const bounds = window.L.latLngBounds([
-        [coords.lat, coords.lng],
-        [doctor.latitude, doctor.longitude],
-      ]);
-      mapInstanceRef.current.fitBounds(bounds, { padding: [60, 60] });
-    } catch (err) {
-      console.error(err);
-      dispatch(addToast({ title: 'Route Error', message: 'Unable to calculate OSRM route.', type: 'error' }));
+    } catch {
+      dispatch(addToast({ title: 'Route Error', message: 'Unable to calculate OpenStreetMap OSRM route.', type: 'error' }));
     } finally {
-      setLoading(false);
+      setRouteLoading(false);
     }
   };
 
-  const filteredDoctors = doctors.filter((doc) => {
-    const q = search.toLowerCase();
-    const matchesSearch =
-      (doc.name || '').toLowerCase().includes(q) ||
-      (doc.specialty || '').toLowerCase().includes(q) ||
-      (doc.address || '').toLowerCase().includes(q);
-    const matchesPhone = !withPhoneOnly || Boolean(doc.phone);
-    return matchesSearch && matchesPhone;
-  });
+  const filteredDoctors = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return doctors.filter((doc) => {
+      const matchesSearch =
+        !q ||
+        (doc.name || '').toLowerCase().includes(q) ||
+        (doc.specialty || '').toLowerCase().includes(q) ||
+        (doc.category || '').toLowerCase().includes(q) ||
+        (doc.address || '').toLowerCase().includes(q);
+      const matchesPhone = !withPhoneOnly || Boolean(doc.phone);
+      return matchesSearch && matchesPhone;
+    });
+  }, [doctors, search, withPhoneOnly]);
 
   return (
-    <div className="space-y-4 max-w-7xl mx-auto h-[88vh] flex flex-col">
+    <div className="space-y-4 max-w-7xl mx-auto pb-4">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 flex-shrink-0">
-        <div>
-          <h2 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-md">
-              <Stethoscope className="w-5 h-5 text-white" />
-            </div>
-            Find Nearby Doctors & Hospitals
-          </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Powered by OpenStreetMap (Overpass & Nominatim). Listings do not independently verify clinician credentials or appointment availability.
-          </p>
+      <div className="glass-card p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 !transform-none">
+        <div className="flex items-start gap-3">
+          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-sky-600 flex items-center justify-center shadow-md flex-shrink-0">
+            <Stethoscope className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight">
+              Find Nearby Doctors, Clinics & Hospitals
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Real OpenStreetMap discovery via Overpass & Nominatim. Clinician credentials and live schedules are not independently verified.
+            </p>
+          </div>
         </div>
 
-        <div className="flex bg-slate-100 dark:bg-white/10 rounded-xl p-1 gap-1 border border-slate-200/70 dark:border-white/15 h-10 items-center">
-          <button onClick={() => setViewMode('split')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${viewMode === 'split' ? 'bg-white dark:bg-dark-200 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'}`}>
-            <Sparkles className="w-3.5 h-3.5" />Split
-          </button>
-          <button onClick={() => setViewMode('list')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${viewMode === 'list' ? 'bg-white dark:bg-dark-200 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'}`}>
-            <List className="w-3.5 h-3.5" />List
-          </button>
-          <button onClick={() => setViewMode('map')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${viewMode === 'map' ? 'bg-white dark:bg-dark-200 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'}`}>
-            <Map className="w-3.5 h-3.5" />Map
-          </button>
+        <div className="inline-flex bg-slate-100 dark:bg-white/10 rounded-xl p-1 gap-1 border border-slate-200/80 dark:border-white/15 self-start sm:self-center flex-shrink-0">
+          {[
+            { id: 'split', label: 'Split', icon: Columns },
+            { id: 'list', label: 'List', icon: List },
+            { id: 'map', label: 'Map', icon: Map },
+          ].map((m) => {
+            const Icon = m.icon;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setViewMode(m.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  viewMode === m.id
+                    ? 'bg-white dark:bg-dark-100 text-indigo-600 dark:text-indigo-300 shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{m.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Explicit Location Consent Banner */}
+      {/* Explicit Location Consent Prompt when coords not yet available */}
       {!coords && (
-        <div className="glass-card p-4 border-l-4 border-indigo-500 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 flex-shrink-0">
+        <div className="glass-card p-4 border-l-4 border-indigo-500 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 !transform-none">
           <div className="flex items-start gap-3">
             <LocateFixed className="w-5 h-5 text-indigo-500 flex-shrink-0 mt-0.5" />
             <div>
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                {locationStatus === 'denied' ? 'Location Permission Denied' : 'Share Your Location to Search OpenStreetMap'}
+                {locationStatus === 'denied'
+                  ? 'Browser Location Denied or Unavailable'
+                  : 'Share Location or Search City / PIN Code'}
               </h3>
               <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
-                HealthPoint never assumes your location. Allow browser location or enter your city, locality, or 6-digit PIN code below.
+                HealthPoint never assumes your city. Allow GPS permission or enter your city, area, or 6-digit PIN code below.
               </p>
             </div>
           </div>
@@ -489,85 +364,56 @@ export default function Doctors() {
         </div>
       )}
 
-      {/* Manual City / Area / PIN Code Search */}
-      <form onSubmit={handleManualAddressSubmit} className="relative z-[1000] flex-shrink-0 flex gap-2">
-        <div className="relative flex-1">
-          <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-500" />
-          <input
-            type="text"
-            value={addressQuery}
-            onChange={handleAddressInputChange}
-            placeholder="Enter city, neighborhood, or 6-digit PIN code (e.g. 560038 or Connaught Place, Delhi)..."
-            className="input-field pl-10 pr-10 py-3 rounded-2xl w-full text-sm font-semibold"
-            onFocus={() => setShowSuggestions(addressSuggestions.length > 0)}
-          />
-          {addressQuery && (
-            <button
-              type="button"
-              onClick={() => { setAddressQuery(''); setAddressSuggestions([]); setShowSuggestions(false); }}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full hover:bg-slate-200 dark:hover:bg-white/10 flex items-center justify-center text-slate-500 dark:text-slate-300"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-        <button type="submit" className="btn-primary py-3 px-4 rounded-2xl font-bold text-sm whitespace-nowrap">
-          Set Location
-        </button>
-        <button type="button" onClick={fetchDoctors} disabled={loading || !coords} className="py-3 px-4 rounded-2xl border border-slate-200 dark:border-white/15 bg-white dark:bg-dark-200 text-slate-700 dark:text-slate-200 font-bold flex items-center gap-2 whitespace-nowrap text-sm disabled:opacity-50">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+      {/* Search & Location Controls */}
+      <OsmLocationToolbar
+        accentColor="indigo"
+        addressQuery={addressQuery}
+        addressSuggestions={addressSuggestions}
+        showSuggestions={showSuggestions}
+        setShowSuggestions={setShowSuggestions}
+        onAddressChange={handleAddressChange}
+        onAddressSubmit={submitAddress}
+        onSelectSuggestion={selectSuggestion}
+        onClearAddress={clearAddressInput}
+        onRequestGps={requestBrowserLocation}
+        locationStatus={locationStatus}
+        locationLabel={locationLabel}
+        geocodeLoading={geocodeLoading}
+        geocodeError={geocodeError}
+        filterText={search}
+        onFilterTextChange={setSearch}
+        filterPlaceholder="Filter doctors, hospitals, or streets..."
+        radius={radius}
+        onRadiusChange={setRadius}
+        loading={loading}
+        hasCoords={Boolean(coords)}
+        onRefresh={loadDoctors}
+        extraControl={
+          <button
+            type="button"
+            onClick={() => setWithPhoneOnly((prev) => !prev)}
+            className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold border flex items-center gap-1.5 transition-all ${
+              withPhoneOnly
+                ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/15 text-slate-700 dark:text-slate-200 hover:border-indigo-400'
+            }`}
+          >
+            <Phone className="w-3.5 h-3.5" /> Phone Listed
+          </button>
+        }
+      />
 
-        <AnimatePresence>
-          {showSuggestions && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              className="absolute left-0 right-0 top-full mt-2 bg-white dark:bg-dark-200 border border-slate-200 dark:border-white/15 rounded-2xl shadow-xl z-[9999] overflow-hidden max-h-60 overflow-y-auto"
-            >
-              {addressSuggestions.map((s, idx) => (
-                <button
-                  type="button"
-                  key={idx}
-                  onClick={() => handleSelectAddress(s)}
-                  className="w-full text-left px-4 py-3 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10 border-b border-slate-100 dark:border-white/10 flex items-center gap-2"
-                >
-                  <MapPin className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
-                  <span className="truncate">{s.display_name}</span>
-                </button>
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </form>
-
-      {/* Filters */}
-      <div className="flex flex-wrap gap-2 flex-shrink-0">
-        <div className="relative flex-1 min-w-[180px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter returned results by name or address..." className="input-field pl-9 py-2 text-sm w-full" />
-          {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2"><X className="w-4 h-4 text-slate-400" /></button>}
-        </div>
-        <select value={radius} onChange={(e) => setRadius(Number(e.target.value))} className="input-field py-2 text-sm w-auto">
-          {RADIUS_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-        </select>
-        <button onClick={() => setWithPhoneOnly(!withPhoneOnly)} className={`px-4 py-2 rounded-xl text-sm font-semibold border flex items-center gap-2 transition-all ${withPhoneOnly ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-200 dark:border-white/15 text-slate-700 dark:text-slate-200'}`}>
-          <Phone className="w-3.5 h-3.5" />Phone Listed
-        </button>
-      </div>
-
-      {/* Specialty chips */}
-      <div className="flex gap-2 overflow-x-auto pb-1 flex-shrink-0 scrollbar-hide">
+      {/* Specialty Pills */}
+      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
         {SPECIALTIES.map((s) => (
           <button
             key={s}
+            type="button"
             onClick={() => setSpecialty(s)}
-            className={`px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border transition-all ${
+            className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition-all ${
               specialty === s
-                ? 'bg-indigo-500 border-indigo-500 text-white shadow-md'
-                : 'border-slate-200 dark:border-white/15 text-slate-600 dark:text-slate-300 hover:border-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300'
+                ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/15 text-slate-600 dark:text-slate-300 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300'
             }`}
           >
             {s}
@@ -575,32 +421,61 @@ export default function Doctors() {
         ))}
       </div>
 
-      {/* Main Results & Leaflet Map */}
-      <div className="flex-1 flex gap-4 overflow-hidden min-h-0">
+      {/* Results & Interactive Map Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         {viewMode !== 'map' && (
-          <div className={`${viewMode === 'split' ? 'w-full lg:w-[44%]' : 'w-full'} flex flex-col overflow-hidden`}>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-3 flex-shrink-0">
-              {!coords ? 'Waiting for location...' : loading ? 'Querying OpenStreetMap Overpass API...' : `${filteredDoctors.length} OpenStreetMap facilities found`}
-              {specialty !== 'All' && <span className="ml-1 text-indigo-500 dark:text-indigo-400 font-semibold">· {specialty}</span>}
-              {locationLabel && coords && <span className="ml-1 text-slate-500 dark:text-slate-400">· Near {locationLabel}</span>}
-            </p>
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1 scrollbar-thin">
+          <div className={`${viewMode === 'split' ? 'lg:col-span-5' : 'lg:col-span-12'} flex flex-col gap-3`}>
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+              <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                {!coords
+                  ? 'Waiting for location...'
+                  : loading
+                  ? 'Querying OpenStreetMap discovery service...'
+                  : `${filteredDoctors.length} OpenStreetMap ${filteredDoctors.length === 1 ? 'facility' : 'facilities'} found`}
+                {specialty !== 'All' && (
+                  <span className="ml-1 text-indigo-600 dark:text-indigo-400 font-bold">· {specialty}</span>
+                )}
+              </p>
+              {sourceInfo && !loading && coords && !osmError && (
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/10 text-slate-500 dark:text-slate-300">
+                  {sourceInfo.cached ? 'Cached OSM' : sourceInfo.mirror || 'OpenStreetMap'}
+                </span>
+              )}
+            </div>
+
+            {osmNotice && !osmError && (
+              <div className="rounded-xl border border-sky-200 dark:border-sky-500/25 bg-sky-50/80 dark:bg-sky-950/20 px-3.5 py-2.5 text-xs text-sky-800 dark:text-sky-200 flex items-start gap-2">
+                <Info className="w-4 h-4 flex-shrink-0 mt-0.5 text-sky-600 dark:text-sky-400" />
+                <span>{osmNotice}</span>
+              </div>
+            )}
+
+            <div
+              className={`space-y-3 ${
+                viewMode === 'split' ? 'lg:max-h-[620px] lg:overflow-y-auto lg:pr-1 scrollbar-thin' : ''
+              }`}
+            >
               {loading ? (
                 Array.from({ length: 4 }).map((_, i) => <DoctorCardSkeleton key={i} />)
               ) : osmError ? (
-                <div className="glass-card p-6 space-y-3 border border-amber-400/30">
-                  <div className="flex items-start gap-2.5 text-amber-700 dark:text-amber-300">
+                <div className="glass-card p-6 space-y-3 border border-rose-300/60 dark:border-rose-500/30 !transform-none">
+                  <div className="flex items-start gap-2.5 text-rose-700 dark:text-rose-300">
                     <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                    <p className="text-sm font-semibold">{osmError}</p>
+                    <div>
+                      <h4 className="text-sm font-bold">OpenStreetMap Search Interrupted</h4>
+                      <p className="text-xs mt-1 leading-relaxed">{osmError}</p>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button onClick={fetchDoctors} className="btn-primary px-4 py-2 text-xs font-bold">Retry Search</button>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button type="button" onClick={loadDoctors} className="btn-primary px-4 py-2 text-xs font-bold">
+                      <RefreshCw className="w-3.5 h-3.5" /> Retry Search
+                    </button>
                     {manualOsmUrl && (
                       <a
                         href={manualOsmUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold"
+                        className="btn-secondary px-4 py-2 text-xs font-bold"
                       >
                         <ExternalLink className="w-3.5 h-3.5" /> Search on OpenStreetMap
                       </a>
@@ -608,24 +483,41 @@ export default function Doctors() {
                   </div>
                 </div>
               ) : !coords ? (
-                <div className="glass-card p-8 text-center">
+                <div className="glass-card p-8 text-center !transform-none">
                   <MapPin className="w-10 h-10 mx-auto text-indigo-400 mb-2" />
-                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Location needed to display nearby facilities</p>
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    Location needed to display nearby doctors & hospitals
+                  </p>
                 </div>
               ) : filteredDoctors.length === 0 ? (
-                <div className="glass-card p-8 text-center space-y-3">
-                  <h3 className="font-bold text-slate-900 dark:text-white">No OpenStreetMap facilities found</h3>
-                  <p className="text-sm text-slate-500 dark:text-slate-300">
-                    {osmNotice || 'Try selecting "All" facilities, expanding the search radius, or checking another area.'}
+                <div className="glass-card p-7 text-center space-y-3 !transform-none">
+                  <Stethoscope className="w-9 h-9 mx-auto text-slate-400" />
+                  <h3 className="font-bold text-slate-900 dark:text-white text-sm">
+                    No matching OpenStreetMap facilities found
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-300 max-w-md mx-auto">
+                    {osmNotice ||
+                      'Community contributors may not tag every specialist separately on OpenStreetMap. Try expanding the radius or viewing all nearby clinics and hospitals.'}
                   </p>
                   <div className="flex flex-wrap justify-center gap-2 pt-1">
-                    <button onClick={() => { setSpecialty('All'); setRadius(10000); setWithPhoneOnly(false); }} className="btn-primary px-5 py-2 text-xs font-bold">Show All Nearby Facilities</button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSpecialty('All');
+                        setRadius(10000);
+                        setWithPhoneOnly(false);
+                        setSearch('');
+                      }}
+                      className="btn-primary px-4 py-2 text-xs font-bold"
+                    >
+                      Show All Nearby Facilities (10 km)
+                    </button>
                     {manualOsmUrl && (
                       <a
                         href={manualOsmUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-slate-200 dark:border-white/15 text-xs font-bold text-slate-700 dark:text-slate-200"
+                        className="btn-secondary px-4 py-2 text-xs font-bold"
                       >
                         <ExternalLink className="w-3.5 h-3.5" /> OpenStreetMap Search
                       </a>
@@ -639,14 +531,9 @@ export default function Doctors() {
                       key={doc.place_id}
                       doctor={doc}
                       isSelected={selectedDoctor?.place_id === doc.place_id}
-                      onSelect={(d) => {
-                        setSelectedDoctor(d);
-                        if (mapInstanceRef.current && d.latitude) {
-                          mapInstanceRef.current.panTo([d.latitude, d.longitude]);
-                        }
-                      }}
+                      onSelect={(d) => setSelectedDoctor(d)}
                       onDirections={handleDirections}
-                      routeActive={activeRoute === doc.place_id}
+                      routeActive={activeRouteId === doc.place_id}
                     />
                   ))}
                 </AnimatePresence>
@@ -656,34 +543,25 @@ export default function Doctors() {
         )}
 
         {viewMode !== 'list' && (
-          <div className={`${viewMode === 'split' ? 'hidden lg:block flex-1' : 'w-full'} rounded-2xl overflow-hidden border border-slate-200 dark:border-white/15 relative min-h-0 bg-slate-100 dark:bg-dark-300`}>
-            {coords ? (
-              <div ref={mapDivRef} className="w-full h-full z-10" />
-            ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center">
-                <LocateFixed className="w-10 h-10 text-indigo-400 mb-3" />
-                <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Grant location permission or enter a PIN code to load the OpenStreetMap view</p>
-              </div>
-            )}
-
-            <AnimatePresence>
-              {routeInfo && (
-                <motion.div
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 15 }}
-                  className="absolute left-4 top-4 z-[999] bg-slate-900/90 backdrop-blur-md border border-indigo-500/30 p-4 rounded-2xl flex items-center gap-4 text-white shadow-xl"
-                >
-                  <div className="w-10 h-10 bg-indigo-500/20 border border-indigo-500/30 rounded-xl flex items-center justify-center">
-                    <Navigation className="w-5 h-5 text-indigo-400 rotate-45" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wide">Estimated OSRM Route</h4>
-                    <p className="text-sm font-black mt-0.5">{routeInfo.distance} km · {routeInfo.duration} mins</p>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+          <div
+            className={`${
+              viewMode === 'split' ? 'lg:col-span-7 h-[380px] lg:h-[650px]' : 'lg:col-span-12 h-[480px] lg:h-[660px]'
+            } w-full lg:sticky lg:top-20`}
+          >
+            <HealthcareLeafletMap
+              coords={coords}
+              locationLabel={locationLabel}
+              items={filteredDoctors}
+              selectedItem={selectedDoctor}
+              onSelectItem={(d) => setSelectedDoctor(d)}
+              routeCoordinates={routeCoordinates}
+              routeInfo={routeInfo}
+              onClearRoute={clearRoute}
+              loading={loading || routeLoading}
+              accentColor="indigo"
+              markerEmoji="🏥"
+              emptyLocationText="Grant location access or search a city / PIN code to view nearby healthcare facilities on OpenStreetMap."
+            />
           </div>
         )}
       </div>

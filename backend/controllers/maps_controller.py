@@ -76,10 +76,25 @@ async def get_nearby_pharmacies(
         specialty="Pharmacy",
         radius=radius or 5000,
         facility_mode="pharmacy",
-        limit=20,
+        limit=25,
         location_label=location_label,
     )
-    if filter_type == "open_now" and res.get("results"):
-        res["results"] = [p for p in res["results"] if p.get("open_now") is True]
-        res["count"] = len(res["results"])
+    if not res.get("ok"):
+        return res
+
+    raw_results = list(res.get("results") or [])
+    res["total_before_filter"] = len(raw_results)
+    if filter_type == "open_now":
+        filtered = [p for p in raw_results if p.get("open_now") is True]
+        res["results"] = filtered
+        res["count"] = len(filtered)
+        if not filtered and raw_results:
+            notice = (
+                f"No pharmacies in OpenStreetMap explicitly list 'opening_hours=24/7' within {int(radius or 5000) // 1000} km; "
+                f"{len(raw_results)} nearby pharmacies are available with 'All' selected."
+            )
+            res["notice"] = notice
+            warnings = list(res.get("warnings") or [])
+            warnings.append(notice)
+            res["warnings"] = warnings
     return res
